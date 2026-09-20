@@ -1,0 +1,6 @@
+{
+  "name": "Local CRM",
+  "description": "Minimal offline-first CRM with universal CSV, Excel, and PDF document importing into fixed templates, employee authentication, and admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
