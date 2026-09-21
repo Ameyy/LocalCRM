@@ -28,7 +28,8 @@ import {
   Zap,
   ArrowRightLeft,
   SlidersHorizontal,
-  MapPin
+  MapPin,
+  AlertCircle
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -59,6 +60,7 @@ interface AdminDashboardProps {
   onAddTask: (taskData: Omit<CrmTask, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateTask: (taskId: string, updates: Partial<CrmTask>) => void;
   onDeleteTask: (taskId: string) => void;
+  onBulkDeleteTasks?: (taskIds: string[]) => void;
   onResetDatabase: () => void;
   onBulkReassignPipelinedLeads?: (
     targetUserId: string,
@@ -84,10 +86,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddTask,
   onUpdateTask,
   onDeleteTask,
+  onBulkDeleteTasks,
   onResetDatabase,
   onBulkReassignPipelinedLeads,
 }) => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'employees' | 'tasks' | 'audit' | 'pipeline'>('analytics');
+
+  // Task deletion and bulk selection states (Admin oversight)
+  const [selectedAdminTaskIds, setSelectedAdminTaskIds] = useState<string[]>([]);
+  const [adminTaskToDelete, setAdminTaskToDelete] = useState<CrmTask | null>(null);
+  const [showAdminBulkDeleteTaskModal, setShowAdminBulkDeleteTaskModal] = useState<boolean>(false);
 
   // Pipeline 1-Click Reassignment State
   const nonAdminEmployee = users.find((u) => u.role !== 'admin');
@@ -955,41 +963,143 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Overview of all assigned duties, pending follow-ups, and completion statuses
               </p>
             </div>
-            <div className="text-xs font-mono text-emerald-400">
-              {tasks.filter((t) => t.status === 'completed').length} / {tasks.length} Completed
+            <div className="flex items-center gap-3">
+              <div className="text-xs font-mono text-emerald-400">
+                {tasks.filter((t) => t.status === 'completed').length} / {tasks.length} Completed
+              </div>
+              <div className="flex items-center gap-1.5 pl-3 border-l border-neutral-800 text-xs">
+                <span className="text-neutral-500 text-[11px]">Select:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminTaskIds(tasks.map((t) => t.id))}
+                  className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+                >
+                  All ({tasks.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminTaskIds(tasks.filter((t) => t.status === 'completed').map((t) => t.id))}
+                  className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-emerald-400 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+                >
+                  Completed
+                </button>
+                {selectedAdminTaskIds.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminBulkDeleteTaskModal(true)}
+                      className="px-2.5 py-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-lg transition cursor-pointer text-[11px] font-semibold flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3 text-rose-400" />
+                      <span>Delete ({selectedAdminTaskIds.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAdminTaskIds([])}
+                      className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
+          {/* Admin Multi-Select Tasks Banner */}
+          {selectedAdminTaskIds.length > 0 && (
+            <div className="bg-neutral-900 border border-rose-500/40 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                <span className="text-xs font-bold text-white">
+                  {selectedAdminTaskIds.length} {selectedAdminTaskIds.length === 1 ? 'Task' : 'Tasks'} Selected
+                </span>
+                <span className="text-xs text-neutral-400">
+                  ({tasks.filter((t) => selectedAdminTaskIds.includes(t.id) && t.status === 'completed').length} completed, {tasks.filter((t) => selectedAdminTaskIds.includes(t.id) && t.status !== 'completed').length} pending)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminTaskIds([])}
+                  className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-950 border border-neutral-800 rounded-xl transition cursor-pointer"
+                >
+                  Deselect All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminBulkDeleteTaskModal(true)}
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 border border-rose-500 rounded-xl flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Bulk Delete Tasks ({selectedAdminTaskIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tasks.map((task) => (
-              <div
-                key={task.id}
-                className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-neutral-800 text-neutral-300">
-                      {task.priority}
-                    </span>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg ${
-                      task.status === 'completed'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                    }`}>
-                      {task.status.toUpperCase()}
-                    </span>
+            {tasks.map((task) => {
+              const isSelected = selectedAdminTaskIds.includes(task.id);
+              return (
+                <div
+                  key={task.id}
+                  className={`p-4 rounded-2xl border transition flex flex-col justify-between ${
+                    isSelected
+                      ? 'border-rose-500/60 bg-rose-950/10 shadow-md ring-1 ring-rose-500/30'
+                      : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 shadow-xs'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedAdminTaskIds((prev) =>
+                              prev.includes(task.id) ? prev.filter((id) => id !== task.id) : [...prev, task.id]
+                            );
+                          }}
+                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-0 cursor-pointer shrink-0"
+                          title={`Select task "${task.title}"`}
+                        />
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-neutral-800 text-neutral-300">
+                          {task.priority}
+                        </span>
+                      </div>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg ${
+                        task.status === 'completed'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                      }`}>
+                        {task.status.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white mb-1">{task.title}</h4>
+                    <p className="text-xs text-neutral-400 line-clamp-2 mb-2">{task.description}</p>
                   </div>
 
-                  <h4 className="text-sm font-bold text-white mb-1">{task.title}</h4>
-                  <p className="text-xs text-neutral-400 line-clamp-2 mb-2">{task.description}</p>
+                  <div className="pt-3 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
+                    <div className="min-w-0 pr-2">
+                      <span>Assigned to: <strong className="text-white">{task.assignedName}</strong></span>
+                      <div className="font-mono text-[11px] text-neutral-500">Due: {task.dueDate}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAdminTaskToDelete(task)}
+                      className="p-1.5 hover:text-rose-400 text-neutral-500 rounded-lg hover:bg-neutral-800 transition cursor-pointer"
+                      title="Delete Task (Admin)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-
-                <div className="pt-3 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
-                  <span>Assigned to: <strong className="text-white">{task.assignedName}</strong></span>
-                  <span className="font-mono text-[11px]">Due: {task.dueDate}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1514,6 +1624,141 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Task Delete Confirmation Modal */}
+      {adminTaskToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-white">Delete Task</h3>
+                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete this task from the system? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Title:</span>
+                <span className="font-bold text-white">{adminTaskToDelete.title}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Assigned To:</span>
+                <span className="text-neutral-200">{adminTaskToDelete.assignedName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Due Date:</span>
+                <span className="font-mono text-neutral-300">{adminTaskToDelete.dueDate}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Status:</span>
+                <span className="capitalize text-neutral-200">{adminTaskToDelete.status.replace('_', ' ')}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAdminTaskToDelete(null)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteTask(adminTaskToDelete.id);
+                  setSelectedAdminTaskIds((prev) => prev.filter((id) => id !== adminTaskToDelete.id));
+                  setAdminTaskToDelete(null);
+                }}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-950/40"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Task</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Bulk Task Delete Confirmation Modal */}
+      {showAdminBulkDeleteTaskModal && selectedAdminTaskIds.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-white">
+                  Bulk Delete {selectedAdminTaskIds.length} Tasks
+                </h3>
+                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete these <strong className="text-rose-300">{selectedAdminTaskIds.length} tasks</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="max-h-52 overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl p-3 space-y-2 divide-y divide-neutral-900">
+              {tasks
+                .filter((t) => selectedAdminTaskIds.includes(t.id))
+                .slice(0, 10)
+                .map((t) => (
+                  <div key={t.id} className="pt-2 first:pt-0 flex items-center justify-between text-xs">
+                    <div className="min-w-0 pr-2">
+                      <div className="font-semibold text-white truncate">{t.title}</div>
+                      <div className="text-[11px] text-neutral-400 truncate">
+                        {t.assignedName} • Due: {t.dueDate}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md capitalize ${
+                        t.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                      }`}>
+                        {t.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              {selectedAdminTaskIds.length > 10 && (
+                <div className="pt-2 text-center text-neutral-400 text-xs italic">
+                  + {selectedAdminTaskIds.length - 10} more tasks selected
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAdminBulkDeleteTaskModal(false)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBulkDeleteTasks) {
+                    onBulkDeleteTasks(selectedAdminTaskIds);
+                  } else {
+                    selectedAdminTaskIds.forEach((id) => onDeleteTask(id));
+                  }
+                  setSelectedAdminTaskIds([]);
+                  setShowAdminBulkDeleteTaskModal(false);
+                }}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-950/40"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirm Bulk Delete ({selectedAdminTaskIds.length})</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

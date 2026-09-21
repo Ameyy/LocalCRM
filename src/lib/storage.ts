@@ -538,6 +538,15 @@ export function saveLeads(leads: Lead[]) {
   localStorage.setItem(KEYS.LEADS, JSON.stringify(leads));
 }
 
+export function deleteLeads(leadIds: string[]): number {
+  const leads = getStoredLeads();
+  const idSet = new Set(leadIds);
+  const remaining = leads.filter((l) => !idSet.has(l.id));
+  const removed = leads.length - remaining.length;
+  saveLeads(remaining);
+  return removed;
+}
+
 export function bulkReassignPipelinedLeads(
   targetUserId: string,
   targetUserName: string,
@@ -721,6 +730,15 @@ export function deleteTask(taskId: string): boolean {
   const filtered = tasks.filter((t) => t.id !== taskId);
   saveTasks(filtered);
   return true;
+}
+
+export function deleteTasks(taskIds: string[]): number {
+  const tasks = getStoredTasks();
+  const idSet = new Set(taskIds);
+  const remaining = tasks.filter((t) => !idSet.has(t.id));
+  const removed = tasks.length - remaining.length;
+  saveTasks(remaining);
+  return removed;
 }
 
 export function getStoredNotifications(): NotificationItem[] {

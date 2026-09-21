@@ -24,6 +24,7 @@ interface TasksViewProps {
   onAddTask: (taskData: Omit<CrmTask, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateTask: (taskId: string, updates: Partial<CrmTask>) => void;
   onDeleteTask: (taskId: string) => void;
+  onBulkDeleteTasks?: (taskIds: string[]) => void;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
@@ -34,12 +35,20 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onAddTask,
   onUpdateTask,
   onDeleteTask,
+  onBulkDeleteTasks,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<TaskPriority | 'all'>('all');
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Multi-select state for Bulk Task Operations (Admin only)
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+
+  // Safe In-App Delete Confirmation Modals (Admin only)
+  const [taskToDelete, setTaskToDelete] = useState<CrmTask | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   // Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -253,8 +262,84 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <span>Assigned To: You ({currentUser.employeeId || currentUser.username})</span>
             </div>
           )}
+
+          {/* Quick Selection Shortcuts (Admin only) */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 pl-2 border-l border-neutral-800 text-xs">
+              <span className="text-neutral-500 text-[11px]">Select:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedTaskIds(filteredTasks.map((t) => t.id))}
+                className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+              >
+                All ({filteredTasks.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTaskIds(filteredTasks.filter((t) => t.status === 'completed').map((t) => t.id))}
+                className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-emerald-400 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+                title="Select all completed tasks"
+              >
+                Completed ({filteredTasks.filter((t) => t.status === 'completed').length})
+              </button>
+              {selectedTaskIds.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkDeleteModal(true)}
+                    className="px-2 py-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-lg transition cursor-pointer text-[11px] font-semibold flex items-center gap-1"
+                    title="Delete all selected tasks (Admin only)"
+                  >
+                    <Trash2 className="w-3 h-3 text-rose-400" />
+                    <span>Delete ({selectedTaskIds.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTaskIds([])}
+                    className="px-2 py-1 bg-neutral-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-800 rounded-lg transition cursor-pointer text-[11px]"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Admin Multi-Select Tasks Banner */}
+      {isAdmin && selectedTaskIds.length > 0 && (
+        <div className="bg-neutral-900 border border-rose-500/40 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+            <span className="text-xs font-bold text-white">
+              {selectedTaskIds.length} {selectedTaskIds.length === 1 ? 'Task' : 'Tasks'} Selected
+            </span>
+            <span className="text-xs text-neutral-400">
+              ({tasks.filter((t) => selectedTaskIds.includes(t.id) && t.status === 'completed').length} completed, {tasks.filter((t) => selectedTaskIds.includes(t.id) && t.status !== 'completed').length} pending/in-progress)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedTaskIds([])}
+              className="px-3 py-1.5 text-xs text-neutral-300 hover:text-white bg-neutral-950 border border-neutral-800 rounded-xl transition cursor-pointer"
+            >
+              Deselect All
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBulkDeleteModal(true)}
+              className="px-3.5 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 border border-rose-500 rounded-xl flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              title="Permanently delete all selected tasks"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Bulk Delete Tasks ({selectedTaskIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Task Grid */}
       {filteredTasks.length === 0 ? (
@@ -273,25 +358,44 @@ export const TasksView: React.FC<TasksViewProps> = ({
             const isAssignedToMe = task.assignedTo === currentUser.id;
             const isDueSoon = new Date(task.dueDate).getTime() < Date.now() + 86400000 * 2;
             const isOverdue = new Date(task.dueDate).getTime() < Date.now() && task.status !== 'completed';
+            const isSelected = selectedTaskIds.includes(task.id);
 
             return (
               <div
                 key={task.id}
                 id={`task-card-${task.id}`}
                 className={`flex flex-col justify-between p-4 rounded-2xl border transition ${
-                  task.status === 'completed'
+                  isSelected
+                    ? 'border-rose-500/60 bg-rose-950/10 shadow-md ring-1 ring-rose-500/30'
+                    : task.status === 'completed'
                     ? 'bg-neutral-950/40 border-neutral-800/60 opacity-80'
                     : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 shadow-xs'
                 }`}
               >
                 <div>
-                  {/* Top Bar: Priority & Status */}
+                  {/* Top Bar: Checkbox + Priority & Status */}
                   <div className="flex items-center justify-between gap-2 mb-2.5">
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border ${priorityColors[task.priority].bg} ${priorityColors[task.priority].text} ${priorityColors[task.priority].border}`}
-                    >
-                      {task.priority}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {isAdmin && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedTaskIds((prev) =>
+                              prev.includes(task.id) ? prev.filter((id) => id !== task.id) : [...prev, task.id]
+                            );
+                          }}
+                          className="w-4 h-4 rounded border-neutral-700 bg-neutral-950 text-emerald-500 focus:ring-0 cursor-pointer shrink-0"
+                          title={`Select task "${task.title}"`}
+                        />
+                      )}
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border ${priorityColors[task.priority].bg} ${priorityColors[task.priority].text} ${priorityColors[task.priority].border}`}
+                      >
+                        {task.priority}
+                      </span>
+                    </div>
 
                     {/* Status Dropdown/Selector */}
                     <select
@@ -360,11 +464,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       </button>
                       {isAdmin && (
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete task "${task.title}"?`)) {
-                              onDeleteTask(task.id);
-                            }
-                          }}
+                          onClick={() => setTaskToDelete(task)}
                           className="p-1 hover:text-rose-400 rounded transition cursor-pointer"
                           title="Delete Task (Admin only)"
                         >
@@ -513,6 +613,156 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Single Task Delete Confirmation Modal */}
+      {taskToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-white">Delete Task</h3>
+                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete this task? This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Task Title:</span>
+                <span className="font-bold text-white">{taskToDelete.title}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Assigned To:</span>
+                <span className="text-neutral-200">{taskToDelete.assignedName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Due Date:</span>
+                <span className="font-mono text-neutral-300">{taskToDelete.dueDate}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Status:</span>
+                <span className="capitalize text-neutral-200">{taskToDelete.status.replace('_', ' ')}</span>
+              </div>
+              {taskToDelete.leadName && (
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-400">Associated Lead:</span>
+                  <span className="text-emerald-400">{taskToDelete.leadName}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setTaskToDelete(null)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteTask(taskToDelete.id);
+                  setSelectedTaskIds((prev) => prev.filter((id) => id !== taskToDelete.id));
+                  setTaskToDelete(null);
+                }}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-950/40"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Task</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Bulk Task Delete Confirmation Modal */}
+      {showBulkDeleteModal && selectedTaskIds.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-white">
+                  Bulk Delete {selectedTaskIds.length} {selectedTaskIds.length === 1 ? 'Task' : 'Tasks'}
+                </h3>
+                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                  You are about to permanently delete <strong className="text-rose-300">{selectedTaskIds.length} tasks</strong> from the system.
+                </p>
+              </div>
+            </div>
+
+            {/* Preview of selected tasks */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-neutral-400 px-1">
+                <span>Selected Tasks ({selectedTaskIds.length})</span>
+                <span className="text-neutral-400">
+                  {tasks.filter((t) => selectedTaskIds.includes(t.id) && t.status === 'completed').length} completed
+                </span>
+              </div>
+              <div className="max-h-52 overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl p-3 space-y-2 divide-y divide-neutral-900">
+                {tasks
+                  .filter((t) => selectedTaskIds.includes(t.id))
+                  .slice(0, 10)
+                  .map((t) => (
+                    <div key={t.id} className="pt-2 first:pt-0 flex items-center justify-between text-xs">
+                      <div className="min-w-0 pr-2">
+                        <div className="font-semibold text-white truncate">{t.title}</div>
+                        <div className="text-[11px] text-neutral-400 truncate">
+                          {t.assignedName} • Due: {t.dueDate} {t.leadName ? `• ${t.leadName}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md capitalize ${
+                          t.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                        }`}>
+                          {t.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                {selectedTaskIds.length > 10 && (
+                  <div className="pt-2 text-center text-neutral-400 text-xs italic">
+                    + {selectedTaskIds.length - 10} more tasks selected
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBulkDeleteTasks) {
+                    onBulkDeleteTasks(selectedTaskIds);
+                  } else {
+                    selectedTaskIds.forEach((id) => onDeleteTask(id));
+                  }
+                  setSelectedTaskIds([]);
+                  setShowBulkDeleteModal(false);
+                }}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-950/40"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirm Bulk Delete ({selectedTaskIds.length})</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

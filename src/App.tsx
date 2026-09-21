@@ -25,6 +25,8 @@ import {
   addTask,
   updateTask,
   deleteTask,
+  deleteTasks,
+  deleteLeads,
   mergeLeads,
   mergeTasks,
   mergeUsers,
@@ -508,6 +510,36 @@ export default function App() {
 
     syncEngine.broadcastLocalChange(currentUser);
     reloadFromStorage();
+    setSyncToast(`Lead "${target?.name || 'record'}" removed successfully.`);
+    setTimeout(() => setSyncToast(null), 3500);
+  };
+
+  // Handle bulk delete leads (strictly Admin only)
+  const handleBulkDeleteLeads = (leadIds: string[]) => {
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin') {
+      setSyncToast('Permission Denied: Only Administrators can delete leads.');
+      setTimeout(() => setSyncToast(null), 4000);
+      return;
+    }
+    if (!leadIds || leadIds.length === 0) return;
+
+    const count = deleteLeads(leadIds);
+    logAudit('DELETE_DEAL', `Bulk deleted ${count} leads from CRM`, currentUser, 'deal');
+    addNotification({
+      type: 'deal_updated',
+      title: `Bulk Leads Removed: ${count} leads`,
+      message: `${currentUser.name} deleted ${count} leads in bulk from the CRM table.`,
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      actorRole: currentUser.role,
+      targetAudience: 'admin_only',
+    });
+
+    syncEngine.broadcastLocalChange(currentUser);
+    reloadFromStorage();
+    setSyncToast(`Successfully deleted ${count} leads.`);
+    setTimeout(() => setSyncToast(null), 4000);
   };
 
   // Handle adding notes/remarks/reviews
@@ -568,9 +600,51 @@ export default function App() {
       setTimeout(() => setSyncToast(null), 4000);
       return;
     }
+    const currentTasks = getStoredTasks();
+    const taskToDelete = currentTasks.find((t) => t.id === taskId);
     deleteTask(taskId);
+    if (taskToDelete) {
+      logAudit('DELETE_TASK', `Removed task "${taskToDelete.title}" assigned to ${taskToDelete.assignedName}`, currentUser, 'task');
+      addNotification({
+        type: 'task_updated',
+        title: `Task Removed: ${taskToDelete.title}`,
+        message: `${currentUser.name} deleted task "${taskToDelete.title}" assigned to ${taskToDelete.assignedName}.`,
+        actorId: currentUser.id,
+        actorName: currentUser.name,
+        actorRole: currentUser.role,
+        targetAudience: 'admin_only',
+      });
+    }
     reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);
+    setSyncToast('Task deleted successfully.');
+    setTimeout(() => setSyncToast(null), 3500);
+  };
+
+  const handleBulkDeleteTasks = (taskIds: string[]) => {
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin') {
+      setSyncToast('Permission Denied: Only Administrators can delete tasks.');
+      setTimeout(() => setSyncToast(null), 4000);
+      return;
+    }
+    if (!taskIds || taskIds.length === 0) return;
+
+    const count = deleteTasks(taskIds);
+    logAudit('DELETE_TASK', `Bulk deleted ${count} tasks`, currentUser, 'task');
+    addNotification({
+      type: 'task_updated',
+      title: `Bulk Tasks Removed: ${count} tasks`,
+      message: `${currentUser.name} deleted ${count} tasks in bulk.`,
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      actorRole: currentUser.role,
+      targetAudience: 'admin_only',
+    });
+    reloadFromStorage();
+    syncEngine.broadcastLocalChange(currentUser);
+    setSyncToast(`Successfully deleted ${count} tasks.`);
+    setTimeout(() => setSyncToast(null), 4000);
   };
 
   // Handle Profile Edits (sales person or admin editing their own name, email, or password)
@@ -816,6 +890,7 @@ export default function App() {
             currentUser={currentUser}
             onUpdateLead={handleUpdateLead}
             onDeleteLead={handleDeleteLead}
+            onBulkDeleteLeads={handleBulkDeleteLeads}
             onOpenImporter={() => setIsImporterOpen(true)}
             onOpenAddLead={() => setIsAddLeadOpen(true)}
             onAddNoteReview={handleAddNoteReview}
@@ -834,6 +909,7 @@ export default function App() {
             onAddTask={handleAddTask}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
+            onBulkDeleteTasks={handleBulkDeleteTasks}
           />
         )}
 
@@ -872,6 +948,7 @@ export default function App() {
             onAddTask={handleAddTask}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
+            onBulkDeleteTasks={handleBulkDeleteTasks}
             onResetDatabase={handleResetDatabase}
             onBulkReassignPipelinedLeads={handleBulkReassignPipelinedLeads}
           />

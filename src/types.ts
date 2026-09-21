@@ -177,7 +177,7 @@ export interface AuditLog {
   userId: string;
   userName: string;
   timestamp: string;
-  category: 'auth' | 'deal' | 'sync' | 'admin';
+  category: 'auth' | 'deal' | 'sync' | 'admin' | 'task';
 }
 
 export interface SyncPacket {
