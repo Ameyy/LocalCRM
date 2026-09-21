@@ -126,8 +126,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
       onUpdateTask(editingTask.id, {
         title: title.trim(),
         description: description.trim(),
-        assignedTo,
-        assignedName,
+        assignedTo: isAdmin ? assignedTo : editingTask.assignedTo,
+        assignedName: isAdmin ? assignedName : editingTask.assignedName,
         dueDate,
         priority,
         leadId: selectedLeadId || undefined,

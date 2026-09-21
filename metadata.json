@@ -1,6 +1,6 @@
 {
-  "name": "Local CRM",
-  "description": "Minimal offline-first CRM with universal CSV, Excel, and PDF document importing into fixed templates, employee authentication, and admin dashboard.",
+  "name": "Krew Mesh CRM",
+  "description": "Krew Mesh CRM with universal data visibility for all team members, role-governed editing, admin-only lead assignment and document importing, and real-time synchronization.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

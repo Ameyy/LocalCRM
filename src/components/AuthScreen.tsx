@@ -67,19 +67,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     onLoginSuccess(updatedUser);
   };
 
-  const handleQuickLogin = (role: 'admin' | 'employee') => {
-    if (role === 'admin') {
-      setLoginMode('admin');
-      setUsername('admin');
-      setPassword('admin123');
-    } else {
-      setLoginMode('employee');
-      setUsername('EMP-002');
-      setPassword('sales123');
-    }
-    setError(null);
-  };
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-neutral-950">
       <div className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
@@ -96,9 +83,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           }`}>
             {loginMode === 'admin' ? <Shield className="w-6 h-6" /> : <Briefcase className="w-6 h-6" />}
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Role-Based CRM</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Krew Mesh CRM</h1>
           <p className="text-xs text-neutral-400 mt-1">
-            Separated Admin &amp; Employee Access with End-to-End Data Isolation
+            Enterprise Operations Platform • Universal Leads Visibility
           </p>
         </div>
 
@@ -145,14 +132,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             <>
               <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
               <span>
-                <strong className="text-neutral-200">Administrator:</strong> Full CRM control, employee roster, account creation, password resets, and progress monitoring.
+                <strong className="text-neutral-200">Administrator:</strong> Full system control, employee roster, lead assignment, document importing, and database management.
               </span>
             </>
           ) : (
             <>
               <Briefcase className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong className="text-neutral-200">Employee:</strong> Access strictly restricted to assigned leads, tasks, calls, personal progress, and profile.
+                <strong className="text-neutral-200">Employee:</strong> View all company leads with editing access to lead and task details.
               </span>
             </>
           )}
@@ -177,8 +164,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder={loginMode === 'admin' ? 'admin or EMP-001' : 'e.g. EMP-002, EMP001 or sales'}
+                placeholder={loginMode === 'admin' ? 'Enter Administrator ID or username' : 'Enter Employee ID or username'}
                 required
+                autoComplete="username"
                 className="w-full pl-10 pr-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
               />
               <UserCheck className="w-4 h-4 text-neutral-500 absolute left-3.5 top-3" />
@@ -190,11 +178,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider">
                 Password
               </label>
-              {loginMode === 'employee' && (
-                <span className="text-[11px] text-neutral-500">
-                  Initial password given by Admin
-                </span>
-              )}
             </div>
             <div className="relative">
               <input
@@ -202,8 +185,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Enter password"
                 required
+                autoComplete="current-password"
                 className="w-full pl-10 pr-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
               />
               <Lock className="w-4 h-4 text-neutral-500 absolute left-3.5 top-3" />
@@ -224,46 +208,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           </button>
         </form>
 
-        {/* Quick Fill Credential Badges */}
-        <div className="mt-6 pt-5 border-t border-neutral-800">
-          <p className="text-[11px] font-medium text-neutral-400 mb-2.5 text-center uppercase tracking-wider">
-            Quick 1-Click Role Login
-          </p>
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              id="quick-fill-admin-btn"
-              type="button"
-              onClick={() => handleQuickLogin('admin')}
-              className="p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-amber-500/50 text-left transition group"
-            >
-              <div className="flex items-center gap-1.5 text-amber-400 text-xs font-semibold mb-1">
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                <span>Admin (Amey K.)</span>
-              </div>
-              <p className="text-[11px] text-neutral-300 font-mono">EMP-001 • admin</p>
-              <p className="text-[10px] text-neutral-500">Pass: admin123</p>
-            </button>
-
-            <button
-              id="quick-fill-sales-btn"
-              type="button"
-              onClick={() => handleQuickLogin('employee')}
-              className="p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-emerald-500/50 text-left transition group"
-            >
-              <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold mb-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>Employee (Sarah J.)</span>
-              </div>
-              <p className="text-[11px] text-neutral-300 font-mono">EMP-002 • sales</p>
-              <p className="text-[10px] text-neutral-500">Pass: sales123</p>
-            </button>
-          </div>
-        </div>
-
-        {/* Offline Badge Footer */}
-        <div className="mt-5 flex items-center justify-center gap-2 text-[11px] text-neutral-500">
+        {/* Security Badge Footer */}
+        <div className="mt-6 pt-5 border-t border-neutral-800 flex items-center justify-center gap-2 text-[11px] text-neutral-500">
           <Laptop className="w-3.5 h-3.5 text-neutral-400" />
-          <span>Local Data Isolation &amp; Role-Based Security</span>
+          <span>Krew Mesh CRM • Role-Governed Access &amp; Secure Authentication</span>
         </div>
       </div>
     </div>

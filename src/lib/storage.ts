@@ -113,6 +113,9 @@ export const INITIAL_LEADS: Lead[] = [
     id: 'lead_1',
     name: 'Marcus Vance',
     company: 'Apex Industrial Tech',
+    region: 'Maharashtra',
+    city: 'Pune',
+    location: 'Pune',
     email: 'marcus@apextech.example',
     phone: '+1 (555) 234-5678',
     stage: 'proposal',
@@ -120,7 +123,7 @@ export const INITIAL_LEADS: Lead[] = [
     priority: 'high',
     assignedTo: 'user_sales',
     assignedName: 'Sarah Jenkins',
-    notes: 'Interested in enterprise offline fleet licensing. Proposal sent for 120 seats.',
+    notes: 'Interested in enterprise offline fleet licensing. Proposal sent for 120 seats in Pune hub.',
     notesLog: [
       {
         id: 'nl_1',
@@ -173,6 +176,9 @@ export const INITIAL_LEADS: Lead[] = [
     id: 'lead_2',
     name: 'Elena Rostova',
     company: 'Nordic Wave Logistics',
+    region: 'Maharashtra',
+    city: 'Mumbai',
+    location: 'Mumbai',
     email: 'elena@nordicwavelog.example',
     phone: '+1 (555) 876-5432',
     stage: 'qualified',
@@ -213,6 +219,9 @@ export const INITIAL_LEADS: Lead[] = [
     id: 'lead_3',
     name: 'David Chen',
     company: 'Solaria Solar Systems',
+    region: 'Maharashtra',
+    city: 'Pune',
+    location: 'Pune',
     email: 'd.chen@solariapower.example',
     phone: '+1 (555) 432-1098',
     stage: 'won',
@@ -254,6 +263,9 @@ export const INITIAL_LEADS: Lead[] = [
     id: 'lead_4',
     name: 'Rachel Adams',
     company: 'Pinnacle Health Labs',
+    region: 'Maharashtra',
+    city: 'Nagpur',
+    location: 'Nagpur',
     email: 'radams@pinnaclelabs.example',
     phone: '+1 (555) 345-6789',
     stage: 'contacted',
@@ -283,6 +295,9 @@ export const INITIAL_LEADS: Lead[] = [
     id: 'lead_5',
     name: 'Omar Farooq',
     company: 'Caspian Freight',
+    region: 'Maharashtra',
+    city: 'Pune',
+    location: 'Pune',
     email: 'omar@caspianfreight.example',
     phone: '+1 (555) 901-2345',
     stage: 'new',
@@ -506,9 +521,12 @@ export function getStoredLeads(): Lead[] {
       return INITIAL_LEADS;
     }
     const parsed: Lead[] = JSON.parse(raw);
-    // Ensure all leads have notesLog array initialized
+    // Ensure all leads have region, city, location, and notesLog array initialized
     return parsed.map(l => ({
       ...l,
+      region: l.region || 'Maharashtra',
+      city: l.city || l.location || 'Pune',
+      location: l.city || l.location || 'Pune',
       notesLog: l.notesLog || [],
     }));
   } catch {

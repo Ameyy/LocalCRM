@@ -27,7 +27,8 @@ import {
   SlidersHorizontal,
   ArrowRightLeft,
   Users,
-  Check
+  Check,
+  MapPin
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Lead, User, PipelineStage, Priority } from '../types';
@@ -73,6 +74,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
   const [repFilter, setRepFilter] = useState<string>('all');
   const [stageFilter, setStageFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [regionFilter, setRegionFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<'name' | 'company' | 'value' | 'updatedAt'>('updatedAt');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -100,36 +102,40 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
   // Note/Review modal state
   const [noteModalLead, setNoteModalLead] = useState<Lead | null>(null);
 
-  // Active records with strict role-based data isolation
-  const activeLeads = leads.filter((l) => {
-    if (l.deleted) return false;
-    if (currentUser.role !== 'admin') {
-      return l.assignedTo === currentUser.id || l.assignedTo === currentUser.employeeId;
-    }
-    return true;
-  });
+  // Active records: UNIVERSAL VISIBILITY - Same data everywhere viewed by everyone
+  const activeLeads = leads.filter((l) => !l.deleted);
+
+  // Available regions list for filtering
+  const availableRegions = Array.from(
+    new Set(activeLeads.map((l) => l.region || 'Maharashtra').filter(Boolean))
+  ) as string[];
 
   // Filtering
   const filteredLeads = activeLeads.filter((lead) => {
     const q = searchQuery.toLowerCase().trim();
+    const cityOrLoc = (lead.city || lead.location || '').toLowerCase();
+    const regionName = (lead.region || '').toLowerCase();
+
     const matchesSearch =
       !q ||
       lead.name.toLowerCase().includes(q) ||
       lead.company.toLowerCase().includes(q) ||
+      cityOrLoc.includes(q) ||
+      regionName.includes(q) ||
       (lead.email && lead.email.toLowerCase().includes(q)) ||
       (lead.phone && lead.phone.toLowerCase().includes(q)) ||
       (lead.notes && lead.notes.toLowerCase().includes(q)) ||
       (lead.notesLog && lead.notesLog.some(n => n.content.toLowerCase().includes(q)));
 
     const matchesRep =
-      currentUser.role !== 'admin' ||
       repFilter === 'all' ||
       lead.assignedTo === repFilter ||
-      (repFilter === 'me' && lead.assignedTo === currentUser.id);
+      (repFilter === 'me' && (lead.assignedTo === currentUser.id || lead.assignedTo === currentUser.employeeId));
     const matchesStage = stageFilter === 'all' || lead.stage === stageFilter;
     const matchesPriority = priorityFilter === 'all' || lead.priority === priorityFilter;
+    const matchesRegion = regionFilter === 'all' || (lead.region || 'Maharashtra').toLowerCase() === regionFilter.toLowerCase();
 
-    return matchesSearch && matchesRep && matchesStage && matchesPriority;
+    return matchesSearch && matchesRep && matchesStage && matchesPriority && matchesRegion;
   });
 
   // Sorting
@@ -218,6 +224,8 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
     const rows = sortedLeads.map((l) => ({
       'Contact Name': l.name,
       'Company': l.company,
+      'Region': l.region || 'Maharashtra',
+      'Location / City': l.city || l.location || 'Pune',
       'Email': l.email || '',
       'Phone': l.phone || '',
       'Deal Value ($)': l.value || 0,
@@ -231,8 +239,8 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'CRM Fixed Table');
-    XLSX.writeFile(workbook, `crm_fixed_table_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Krew Mesh CRM Leads');
+    XLSX.writeFile(workbook, `krew_mesh_crm_leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const handleToggleSort = (field: 'name' | 'company' | 'value' | 'updatedAt') => {
@@ -248,10 +256,20 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
     e.preventDefault();
     if (!editingLead) return;
 
-    const assignedUser = users.find((u) => u.id === editingLead.assignedTo);
+    // For employees, preserve original assignment so employee cannot alter assignedTo
+    const originalLead = leads.find((l) => l.id === editingLead.id);
+    const assignedToId = currentUser.role === 'admin' 
+      ? editingLead.assignedTo 
+      : (originalLead ? originalLead.assignedTo : editingLead.assignedTo);
+
+    const assignedUser = users.find((u) => u.id === assignedToId);
     const updated: Lead = {
       ...editingLead,
-      assignedName: assignedUser ? assignedUser.name : editingLead.assignedName,
+      region: (editingLead.region || '').trim() || 'Maharashtra',
+      city: (editingLead.city || editingLead.location || '').trim() || 'Pune',
+      location: (editingLead.city || editingLead.location || '').trim() || 'Pune',
+      assignedTo: assignedToId,
+      assignedName: assignedUser ? assignedUser.name : (originalLead?.assignedName || editingLead.assignedName),
       updatedAt: new Date().toISOString(),
       version: editingLead.version + 1,
     };
@@ -267,23 +285,23 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold text-white tracking-tight">
-              {currentUser.role === 'admin' ? 'Fixed CRM Table' : 'My Assigned Leads'}
+              Krew Mesh CRM Fixed Table
             </h1>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              {currentUser.role === 'admin' ? 'Master Records' : `Employee View (${currentUser.employeeId || currentUser.username})`}
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              {currentUser.role === 'admin' ? 'Master Admin Control' : 'Universal View • Employee Edit Access'}
             </span>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
             {currentUser.role === 'admin'
-              ? 'Complete company database with cross-team sync, assignment control, and audit logs'
-              : 'Viewing only leads assigned to you. All remarks, follow-ups, and status updates sync to the Admin.'}
+              ? 'Complete company database with cross-team sync, 1-click reassignment, export, and audit logs'
+              : 'Universal leads database viewed by all employees. You can edit lead and task data; lead assignments and exports are restricted to Admin.'}
           </p>
         </div>
 
-        {/* Action Buttons: Add Lead + Import + Export */}
+        {/* Action Buttons: Add Lead + Import + Export (strictly Admin managed) */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* New Lead manual button (if permitted) */}
-          {(currentUser.role === 'admin' || currentUser.permissions?.canCreateLeads !== false) && (
+          {/* New Lead manual button (Admin only) */}
+          {currentUser.role === 'admin' && (
             <button
               id="open-add-lead-btn"
               onClick={onOpenAddLead}
@@ -294,8 +312,8 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
             </button>
           )}
 
-          {/* Import document button (Admin only or if explicitly permitted) */}
-          {(currentUser.role === 'admin' || currentUser.permissions?.canCreateLeads) && (
+          {/* Import document button (Admin only) */}
+          {currentUser.role === 'admin' && (
             <button
               id="open-import-data-btn"
               onClick={onOpenImporter}
@@ -306,27 +324,33 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
             </button>
           )}
 
-          {/* Export button (only if permitted) */}
-          {(currentUser.role === 'admin' || currentUser.permissions?.canExportData !== false) && (
+          {/* Export & Template buttons (strictly Admin only) */}
+          {currentUser.role === 'admin' && (
             <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-800 p-1 rounded-xl">
               <button
                 onClick={handleExportExcel}
                 className="px-2.5 py-1.5 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
-                title="Export to Excel Spreadsheet"
+                title="Export to Excel Spreadsheet (Admin only)"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Export</span>
               </button>
-              {currentUser.role === 'admin' && (
-                <button
-                  onClick={downloadExcelTemplate}
-                  className="px-2.5 py-1.5 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
-                  title="Download Fixed Template File"
-                >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Template</span>
-                </button>
-              )}
+              <button
+                onClick={downloadExcelTemplate}
+                className="px-2.5 py-1.5 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                title="Download Fixed Template File (Admin only)"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Template</span>
+              </button>
+            </div>
+          )}
+
+          {/* Employee status indicator */}
+          {currentUser.role !== 'admin' && (
+            <div className="flex items-center gap-2 text-[11px] text-neutral-400 bg-neutral-900/90 border border-neutral-800 px-3 py-1.5 rounded-xl">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Universal Access • Export &amp; Assigning Admin-Only</span>
             </div>
           )}
         </div>
@@ -453,27 +477,20 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
 
         {/* Dropdown Filters */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* Rep filter (Admin only) */}
-          {currentUser.role === 'admin' ? (
-            <select
-              value={repFilter}
-              onChange={(e) => setRepFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-300 focus:outline-hidden focus:border-emerald-500"
-            >
-              <option value="all">All Sales Reps</option>
-              <option value="me">My Assigned Contacts</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.employeeId || u.username})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="px-2.5 py-1.5 bg-neutral-950 border border-neutral-800 rounded-xl text-emerald-400 font-medium flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Assigned to: You ({currentUser.employeeId || currentUser.username})</span>
-            </div>
-          )}
+          {/* Rep filter (Universal table filtering for all team members) */}
+          <select
+            value={repFilter}
+            onChange={(e) => setRepFilter(e.target.value)}
+            className="px-2.5 py-1.5 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-300 focus:outline-hidden focus:border-emerald-500"
+          >
+            <option value="all">All Sales Reps</option>
+            <option value="me">My Assigned Leads</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} ({u.employeeId || u.username})
+              </option>
+            ))}
+          </select>
 
           {/* Stage filter */}
           <select
@@ -500,6 +517,20 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
             <option value="high">High Priority</option>
             <option value="medium">Medium Priority</option>
             <option value="low">Low Priority</option>
+          </select>
+
+          {/* Region / State filter */}
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+            className="px-2.5 py-1.5 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-300 focus:outline-hidden focus:border-emerald-500"
+          >
+            <option value="all">All Regions</option>
+            {availableRegions.map((reg) => (
+              <option key={reg} value={reg}>
+                {reg}
+              </option>
+            ))}
           </select>
 
           {/* Quick Selection Shortcuts (Admin only) */}
@@ -576,6 +607,12 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
+                <th className="py-3 px-4">
+                  <div className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-emerald-400" />
+                    <span>Location &amp; Region</span>
+                  </div>
+                </th>
                 <th className="py-3 px-4">Contact Info</th>
                 <th
                   onClick={() => handleToggleSort('value')}
@@ -596,7 +633,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
             <tbody className="divide-y divide-neutral-800 text-xs">
               {sortedLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={currentUser.role === 'admin' ? 10 : 9} className="py-12 text-center">
+                  <td colSpan={currentUser.role === 'admin' ? 11 : 10} className="py-12 text-center">
                     <div className="max-w-md mx-auto space-y-3">
                       <div className="w-12 h-12 rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-center text-neutral-500 mx-auto">
                         <UploadCloud className="w-6 h-6 text-emerald-400" />
@@ -673,6 +710,21 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                         <div className="flex items-center gap-1.5">
                           <Building2 className="w-3.5 h-3.5 text-neutral-500" />
                           <span>{lead.company || '—'}</span>
+                        </div>
+                      </td>
+
+                      {/* Location & Region */}
+                      <td className="py-3 px-4 text-xs whitespace-nowrap">
+                        <div className="flex items-start gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold text-white block">
+                              {lead.city || lead.location || 'Pune'}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 block font-medium">
+                              {lead.region || 'Maharashtra'}
+                            </span>
+                          </div>
                         </div>
                       </td>
 
@@ -860,6 +912,54 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="block font-semibold text-neutral-300 mb-1">Region / State (e.g. Maharashtra) *</label>
+                  <input
+                    type="text"
+                    required
+                    list="drawer-region-suggestions"
+                    value={editingLead.region || 'Maharashtra'}
+                    onChange={(e) => setEditingLead({ ...editingLead, region: e.target.value })}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white focus:border-emerald-500 focus:outline-hidden"
+                  />
+                  <datalist id="drawer-region-suggestions">
+                    <option value="Maharashtra" />
+                    <option value="Karnataka" />
+                    <option value="Gujarat" />
+                    <option value="Delhi NCR" />
+                    <option value="Tamil Nadu" />
+                    <option value="Telangana" />
+                    <option value="Uttar Pradesh" />
+                    <option value="Rajasthan" />
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block font-semibold text-neutral-300 mb-1">Location / City (e.g. Pune) *</label>
+                  <input
+                    type="text"
+                    required
+                    list="drawer-city-suggestions"
+                    value={editingLead.city || editingLead.location || 'Pune'}
+                    onChange={(e) => setEditingLead({ ...editingLead, city: e.target.value, location: e.target.value })}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white focus:border-emerald-500 focus:outline-hidden"
+                  />
+                  <datalist id="drawer-city-suggestions">
+                    <option value="Pune" />
+                    <option value="Mumbai" />
+                    <option value="Nagpur" />
+                    <option value="Nashik" />
+                    <option value="Thane" />
+                    <option value="Navi Mumbai" />
+                    <option value="Aurangabad (Chhatrapati Sambhaji Nagar)" />
+                    <option value="Solapur" />
+                    <option value="Kolhapur" />
+                    <option value="Bengaluru" />
+                    <option value="Hyderabad" />
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block font-semibold text-neutral-300 mb-1">Email Address</label>
                   <input
                     type="email"
@@ -949,9 +1049,14 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                 </div>
               ) : (
                 <div>
-                  <label className="block font-semibold text-neutral-300 mb-1">Assigned To</label>
-                  <div className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-300 font-medium">
-                    {currentUser.name} ({currentUser.employeeId || currentUser.username})
+                  <label className="block font-semibold text-neutral-300 mb-1">Assigned Sales Rep</label>
+                  <div className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-300 font-medium flex items-center justify-between">
+                    <span>
+                      {users.find((u) => u.id === editingLead.assignedTo)?.name || editingLead.assignedName || 'Unassigned'}
+                    </span>
+                    <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded font-mono">
+                      Admin Assigning Only
+                    </span>
                   </div>
                 </div>
               )}

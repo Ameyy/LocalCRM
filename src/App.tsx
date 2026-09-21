@@ -73,6 +73,29 @@ export default function App() {
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
+  // Anti-screenshot & Print Restriction for employee sessions
+  useEffect(() => {
+    if (currentUser?.role && currentUser.role !== 'admin') {
+      document.body.classList.add('employee-restricted');
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // Block Ctrl+P / Cmd+P (Print to PDF / screenshot capture)
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+          e.preventDefault();
+          e.stopPropagation();
+          setSyncToast('Notice: Printing and database exports are restricted for employee accounts.');
+          setTimeout(() => setSyncToast(null), 4000);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.classList.remove('employee-restricted');
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    } else {
+      document.body.classList.remove('employee-restricted');
+    }
+  }, [currentUser?.role]);
+
   // Refresh data from local storage
   const reloadFromStorage = useCallback(() => {
     const freshLeads = getStoredLeads();
@@ -319,7 +342,18 @@ export default function App() {
 
     const currentLeads = getStoredLeads();
     const oldLead = currentLeads.find((l) => l.id === updatedLead.id);
-    const updated = currentLeads.map((l) => (l.id === updatedLead.id ? updatedLead : l));
+    if (!oldLead) return;
+
+    // Strict Enforcement: Employees can only edit lead details, NOT assigned rep
+    const finalLead: Lead = currentUser.role === 'admin'
+      ? updatedLead
+      : {
+          ...updatedLead,
+          assignedTo: oldLead.assignedTo,
+          assignedName: oldLead.assignedName,
+        };
+
+    const updated = currentLeads.map((l) => (l.id === finalLead.id ? finalLead : l));
     saveLeads(updated);
     setLeads(updated);
 
@@ -444,9 +478,14 @@ export default function App() {
     return count;
   };
 
-  // Handle delete lead
+  // Handle delete lead (strictly Admin only)
   const handleDeleteLead = (leadId: string) => {
     if (!currentUser) return;
+    if (currentUser.role !== 'admin') {
+      setSyncToast('Permission Denied: Only Administrators can delete leads.');
+      setTimeout(() => setSyncToast(null), 4000);
+      return;
+    }
 
     const currentLeads = getStoredLeads();
     const target = currentLeads.find((l) => l.id === leadId);
@@ -494,21 +533,41 @@ export default function App() {
   // Handle Tasks
   const handleAddTask = (taskData: Omit<CrmTask, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!currentUser) return;
-    addTask(taskData, currentUser);
+    // Employees can create tasks for themselves, but only Admin can assign tasks to other employees
+    const finalTaskData = currentUser.role === 'admin'
+      ? taskData
+      : {
+          ...taskData,
+          assignedTo: currentUser.id,
+          assignedName: currentUser.name,
+        };
+
+    addTask(finalTaskData, currentUser);
     reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);
-    setSyncToast(`Assigned task "${taskData.title}" to ${taskData.assignedName}.`);
+    setSyncToast(`Assigned task "${finalTaskData.title}" to ${finalTaskData.assignedName}.`);
     setTimeout(() => setSyncToast(null), 4000);
   };
 
   const handleUpdateTask = (taskId: string, updates: Partial<CrmTask>) => {
     if (!currentUser) return;
-    updateTask(taskId, updates, currentUser);
+    // Employees cannot reassign tasks to other users
+    const safeUpdates = currentUser.role === 'admin'
+      ? updates
+      : { ...updates, assignedTo: undefined, assignedName: undefined };
+
+    updateTask(taskId, safeUpdates, currentUser);
     reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);
   };
 
   const handleDeleteTask = (taskId: string) => {
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin') {
+      setSyncToast('Permission Denied: Only Administrators can delete tasks.');
+      setTimeout(() => setSyncToast(null), 4000);
+      return;
+    }
     deleteTask(taskId);
     reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);

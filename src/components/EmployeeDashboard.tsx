@@ -19,7 +19,8 @@ import {
   Briefcase,
   Building,
   Target,
-  Sparkles
+  Sparkles,
+  MapPin
 } from 'lucide-react';
 import { User, Lead, CrmTask, AuditLog, NoteReviewEntry } from '../types';
 import { AddNoteReviewModal } from './AddNoteReviewModal';
@@ -283,6 +284,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                       </div>
 
                       <div className="flex items-center gap-3 text-[11px] text-neutral-400">
+                        <span className="flex items-center gap-1 text-neutral-300">
+                          <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <span>{lead.city || lead.location || 'Pune'}, {lead.region || 'Maharashtra'}</span>
+                        </span>
                         {lead.phone && (
                           <span className="flex items-center gap-1 font-mono text-emerald-400/90">
                             <Phone className="w-3 h-3 text-neutral-500" />

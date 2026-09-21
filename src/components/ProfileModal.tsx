@@ -233,39 +233,27 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             {isEmployee && currentUser.permissions && (
               <div className="pt-2 border-t border-neutral-800/80">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">
-                  Permitted CRM Sections
+                  Permissions &amp; Capabilities
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {currentUser.permissions.canViewLeads && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      ✓ My Leads
-                    </span>
-                  )}
-                  {currentUser.permissions.canCreateLeads && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      ✓ Add Leads
-                    </span>
-                  )}
-                  {currentUser.permissions.canViewTasks && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      ✓ My Tasks
-                    </span>
-                  )}
-                  {currentUser.permissions.canViewFollowUps && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      ✓ Follow-ups
-                    </span>
-                  )}
-                  {currentUser.permissions.canViewProgress && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      ✓ My Progress
-                    </span>
-                  )}
-                  {currentUser.permissions.canExportData && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">
-                      ✓ Export Data
-                    </span>
-                  )}
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                    ✓ Universal Leads View
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                    ✓ Edit Lead Data
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                    ✓ Task Management
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                    ✓ Notes &amp; Remarks
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                    🔒 Lead Assignment (Admin Only)
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-400 border border-neutral-700">
+                    🔒 Export &amp; Capture (Admin Only)
+                  </span>
                 </div>
               </div>
             )}

@@ -361,6 +361,7 @@ export const DataImporterModal: React.FC<DataImporterModalProps> = ({
                       <tr className="border-b border-neutral-800 bg-neutral-900/60 text-[11px] font-semibold text-neutral-400">
                         <th className="py-2 px-3">Name</th>
                         <th className="py-2 px-3">Company</th>
+                        <th className="py-2 px-3">Location &amp; Region</th>
                         <th className="py-2 px-3">Email</th>
                         <th className="py-2 px-3">Phone</th>
                         <th className="py-2 px-3">Value</th>
@@ -373,6 +374,10 @@ export const DataImporterModal: React.FC<DataImporterModalProps> = ({
                         <tr key={idx} className="text-neutral-300">
                           <td className="py-2 px-3 font-semibold text-white">{item.name}</td>
                           <td className="py-2 px-3 text-neutral-400">{item.company}</td>
+                          <td className="py-2 px-3 text-neutral-300 font-medium">
+                            <span className="text-white">{item.city || item.location || 'Pune'}</span>
+                            <span className="text-neutral-500 text-[11px]">, {item.region || 'Maharashtra'}</span>
+                          </td>
                           <td className="py-2 px-3 text-neutral-400 font-mono text-[11px]">{item.email || '—'}</td>
                           <td className="py-2 px-3 text-neutral-400">{item.phone || '—'}</td>
                           <td className="py-2 px-3 text-emerald-400 font-semibold">${item.value.toLocaleString()}</td>

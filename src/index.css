@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+@media print {
+  body.employee-restricted {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
+
+.employee-restricted .employee-anti-capture {
+  user-select: none;
+  -webkit-user-select: none;
+}

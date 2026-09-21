@@ -19,6 +19,8 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
+  const [region, setRegion] = useState('Maharashtra');
+  const [city, setCity] = useState('Pune');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [value, setValue] = useState<string>('15000');
@@ -38,6 +40,9 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
     onAddLead({
       name: name.trim(),
       company: company.trim(),
+      region: region.trim() || 'Maharashtra',
+      city: city.trim() || 'Pune',
+      location: city.trim() || 'Pune',
       email: email.trim(),
       phone: phone.trim(),
       value: parseFloat(value) || 0,
@@ -52,6 +57,8 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
     // Reset form & close
     setName('');
     setCompany('');
+    setRegion('Maharashtra');
+    setCity('Pune');
     setEmail('');
     setPhone('');
     setValue('15000');
@@ -110,6 +117,62 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                 onChange={(e) => setCompany(e.target.value)}
                 className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white text-sm focus:border-emerald-500 focus:outline-hidden"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                Region / State (e.g. Maharashtra) <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                list="region-suggestions"
+                placeholder="e.g. Maharashtra"
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white text-sm focus:border-emerald-500 focus:outline-hidden"
+              />
+              <datalist id="region-suggestions">
+                <option value="Maharashtra" />
+                <option value="Karnataka" />
+                <option value="Gujarat" />
+                <option value="Delhi NCR" />
+                <option value="Tamil Nadu" />
+                <option value="Telangana" />
+                <option value="Uttar Pradesh" />
+                <option value="Rajasthan" />
+                <option value="Madhya Pradesh" />
+              </datalist>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                Location / City (e.g. Pune) <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                list="city-suggestions"
+                placeholder="e.g. Pune"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white text-sm focus:border-emerald-500 focus:outline-hidden"
+              />
+              <datalist id="city-suggestions">
+                <option value="Pune" />
+                <option value="Mumbai" />
+                <option value="Nagpur" />
+                <option value="Nashik" />
+                <option value="Thane" />
+                <option value="Navi Mumbai" />
+                <option value="Aurangabad (Chhatrapati Sambhaji Nagar)" />
+                <option value="Solapur" />
+                <option value="Kolhapur" />
+                <option value="Bengaluru" />
+                <option value="Hyderabad" />
+                <option value="Ahmedabad" />
+              </datalist>
             </div>
           </div>
 

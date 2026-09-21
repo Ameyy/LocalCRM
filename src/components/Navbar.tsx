@@ -57,14 +57,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-base text-white tracking-tight">Local CRM</span>
+                  <span className="font-bold text-base text-white tracking-tight">Krew Mesh CRM</span>
                   <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-sm bg-neutral-800 text-neutral-300 border border-neutral-700">
                     Offline
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-neutral-400">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Central Sync • Amey Kulkarni CRM</span>
+                  <span>Central Sync • Krew Mesh CRM</span>
                 </div>
               </div>
             </div>
@@ -141,15 +141,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Tools */}
           <div className="flex items-center gap-2.5">
-            {/* Primary Import Button */}
-            <button
-              id="nav-import-doc-btn"
-              onClick={onOpenImporter}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition shrink-0 cursor-pointer"
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span className="hidden sm:inline">Import Document</span>
-            </button>
+            {/* Primary Import Button (Admin only) */}
+            {currentUser.role === 'admin' && (
+              <button
+                id="nav-import-doc-btn"
+                onClick={onOpenImporter}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition shrink-0 cursor-pointer"
+                title="Universal Document Importer"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span className="hidden sm:inline">Import Document</span>
+              </button>
+            )}
 
             {/* PWA Install Button if available */}
             {isInstallable && (

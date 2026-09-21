@@ -27,7 +27,8 @@ import {
   Plus,
   Zap,
   ArrowRightLeft,
-  SlidersHorizontal
+  SlidersHorizontal,
+  MapPin
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -319,6 +320,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       completedTasks,
     };
   });
+
+  // 4. Regional & Location Breakdown
+  const regionMap: Record<string, { count: number; value: number; cities: Set<string> }> = {};
+  activeLeads.forEach((l) => {
+    const reg = l.region || 'Maharashtra';
+    const city = l.city || l.location || 'Pune';
+    if (!regionMap[reg]) {
+      regionMap[reg] = { count: 0, value: 0, cities: new Set() };
+    }
+    regionMap[reg].count++;
+    regionMap[reg].value += l.value || 0;
+    regionMap[reg].cities.add(city);
+  });
+  const regionalBreakdown = Object.entries(regionMap).map(([region, data]) => ({
+    region,
+    count: data.count,
+    value: data.value,
+    cityList: Array.from(data.cities).join(', '),
+  }));
 
   return (
     <div id="admin-dashboard" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -658,6 +678,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Regional & City Distribution */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-emerald-400" />
+                  <span>Regional &amp; Location Breakdown</span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Standardized CRM territory coverage across regions (e.g. Maharashtra) and active cities (e.g. Pune, Mumbai, Nagpur)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {regionalBreakdown.map((item) => (
+                <div
+                  key={item.region}
+                  className="p-4 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 rounded-xl space-y-2 transition"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span className="font-bold text-white text-sm">{item.region}</span>
+                    </div>
+                    <span className="text-xs font-mono font-semibold text-emerald-400">
+                      {formatCurrency(item.value)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-neutral-400 flex items-center justify-between pt-1 border-t border-neutral-800/60">
+                    <span>Active Leads: <strong className="text-white font-mono">{item.count}</strong></span>
+                    <span className="text-[11px] text-neutral-500 truncate max-w-[140px]" title={item.cityList}>
+                      📍 {item.cityList || 'Pune'}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

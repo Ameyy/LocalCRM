@@ -101,6 +101,9 @@ export interface Lead {
   company: string;
   email: string;
   phone: string;
+  region?: string; // e.g. 'Maharashtra'
+  city?: string;   // e.g. 'Pune'
+  location?: string; // Location / City representation
   stage: PipelineStage;
   value: number; // e.g. 15000 in USD
   priority: Priority;

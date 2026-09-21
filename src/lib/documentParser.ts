@@ -12,6 +12,8 @@ export interface ParsedDocumentResult {
 export const FIXED_TEMPLATE_FIELDS = [
   { key: 'name', label: 'Contact / Lead Name', required: true, synonyms: ['name', 'full name', 'fullname', 'contact', 'client', 'customer', 'person', 'lead name', 'lead'] },
   { key: 'company', label: 'Company / Organization', required: false, synonyms: ['company', 'organization', 'org', 'account', 'business', 'employer', 'corp', 'firm', 'agency'] },
+  { key: 'region', label: 'Region / State (e.g. Maharashtra)', required: false, synonyms: ['region', 'state', 'province', 'territory', 'zone', 'area', 'region state'] },
+  { key: 'city', label: 'Location / City (e.g. Pune)', required: false, synonyms: ['location', 'city', 'town', 'place', 'district', 'municipality', 'metro', 'address city'] },
   { key: 'email', label: 'Email Address', required: false, synonyms: ['email', 'mail', 'e-mail', 'email address', 'contact email'] },
   { key: 'phone', label: 'Phone Number', required: false, synonyms: ['phone', 'mobile', 'tel', 'telephone', 'cell', 'contact number', 'phone number'] },
   { key: 'value', label: 'Deal Value / Amount ($)', required: false, synonyms: ['value', 'amount', 'deal', 'deal value', 'revenue', 'price', 'budget', 'cost', 'total', 'worth', 'quote'] },
@@ -281,6 +283,12 @@ export function mapRowsToFixedTemplate(
     const companyVal = columnMapping['company'] ? String(row[columnMapping['company']] || '').trim() : '';
     const emailVal = columnMapping['email'] ? String(row[columnMapping['email']] || '').trim() : '';
     const phoneVal = columnMapping['phone'] ? String(row[columnMapping['phone']] || '').trim() : '';
+    const regionVal = columnMapping['region'] ? String(row[columnMapping['region']] || '').trim() : '';
+    const cityVal = columnMapping['city'] ? String(row[columnMapping['city']] || '').trim() : '';
+    
+    // Standard Region & City defaults (e.g. Maharashtra & Pune)
+    const standardRegion = regionVal || 'Maharashtra';
+    const standardCity = cityVal || 'Pune';
     
     // Value sanitization
     let numValue = 0;
@@ -330,6 +338,9 @@ export function mapRowsToFixedTemplate(
       id: 'lead_imp_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substring(2, 6),
       name: nameVal || `Imported Contact ${index + 1}`,
       company: companyVal || 'N/A',
+      region: standardRegion,
+      city: standardCity,
+      location: standardCity,
       email: emailVal,
       phone: phoneVal,
       value: numValue,
@@ -344,7 +355,7 @@ export function mapRowsToFixedTemplate(
           id: 'act_imp_' + Date.now() + '_' + index,
           leadId: 'lead_imp_' + Date.now() + '_' + index,
           type: 'note',
-          description: `Imported into fixed CRM table from document.`,
+          description: `Imported into fixed CRM table from document (${standardCity}, ${standardRegion}).`,
           performedBy: defaultAssignedUser?.id || 'system',
           performedByName: defaultAssignedUser?.name || 'System',
           timestamp: now,
@@ -365,6 +376,8 @@ export function downloadExcelTemplate() {
     {
       'Contact Name': 'Alexander Wright',
       'Company': 'Apex Global Logistics',
+      'Region': 'Maharashtra',
+      'Location / City': 'Pune',
       'Email': 'a.wright@apexlog.example',
       'Phone': '+1 (555) 432-8765',
       'Deal Value': 35000,
@@ -376,6 +389,8 @@ export function downloadExcelTemplate() {
     {
       'Contact Name': 'Sophia Martinez',
       'Company': 'Catalyst Energy Inc',
+      'Region': 'Maharashtra',
+      'Location / City': 'Mumbai',
       'Email': 'smartinez@catalystenergy.example',
       'Phone': '+1 (555) 876-1234',
       'Deal Value': 52000,
@@ -387,6 +402,8 @@ export function downloadExcelTemplate() {
     {
       'Contact Name': 'Liam O Connor',
       'Company': 'Vanguard Engineering',
+      'Region': 'Maharashtra',
+      'Location / City': 'Pune',
       'Email': 'liam@vanguardeng.example',
       'Phone': '+1 (555) 234-9876',
       'Deal Value': 74000,
@@ -400,7 +417,7 @@ export function downloadExcelTemplate() {
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'CRM Fixed Template');
-  XLSX.writeFile(workbook, 'local_crm_fixed_template.xlsx');
+  XLSX.writeFile(workbook, 'krew_mesh_crm_fixed_template.xlsx');
 }
 
 /**
@@ -408,16 +425,16 @@ export function downloadExcelTemplate() {
  */
 export function downloadCsvTemplate() {
   const csvContent = [
-    'Contact Name,Company,Email,Phone,Deal Value,Status,Priority,Assigned Rep,Notes',
-    '"Marcus Vance","Apex Industrial Tech","marcus@apextech.example","+1 (555) 234-5678",48000,"Proposal","High","Sarah Jenkins","Fleet licensing review"',
-    '"Elena Rostova","Nordic Wave Logistics","elena@nordicwavelog.example","+1 (555) 876-5432",29500,"Qualified","Medium","Sarah Jenkins","Warehouse dispatch deployment"',
+    'Contact Name,Company,Region,Location / City,Email,Phone,Deal Value,Status,Priority,Assigned Rep,Notes',
+    '"Marcus Vance","Apex Industrial Tech","Maharashtra","Pune","marcus@apextech.example","+1 (555) 234-5678",48000,"Proposal","High","Sarah Jenkins","Fleet licensing review"',
+    '"Elena Rostova","Nordic Wave Logistics","Maharashtra","Mumbai","elena@nordicwavelog.example","+1 (555) 876-5432",29500,"Qualified","Medium","Sarah Jenkins","Warehouse dispatch deployment"',
   ].join('\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'local_crm_fixed_template.csv';
+  a.download = 'krew_mesh_crm_fixed_template.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
