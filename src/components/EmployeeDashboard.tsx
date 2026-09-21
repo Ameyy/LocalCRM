@@ -116,7 +116,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-neutral-900 via-neutral-900 to-neutral-950 border border-neutral-800 rounded-3xl p-6 relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -286,7 +286,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                       <div className="flex items-center gap-3 text-[11px] text-neutral-400">
                         <span className="flex items-center gap-1 text-neutral-300">
                           <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                          <span>{lead.city || lead.location || 'Pune'}, {lead.region || 'Maharashtra'}</span>
+                          <span>{lead.city || lead.location || '—'}{lead.region ? `, ${lead.region}` : ''}</span>
                         </span>
                         {lead.phone && (
                           <span className="flex items-center gap-1 font-mono text-emerald-400/90">

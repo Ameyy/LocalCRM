@@ -332,8 +332,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // 4. Regional & Location Breakdown
   const regionMap: Record<string, { count: number; value: number; cities: Set<string> }> = {};
   activeLeads.forEach((l) => {
-    const reg = l.region || 'Maharashtra';
-    const city = l.city || l.location || 'Pune';
+    const reg = l.region || 'General Territory';
+    const city = l.city || l.location || 'Not Specified';
     if (!regionMap[reg]) {
       regionMap[reg] = { count: 0, value: 0, cities: new Set() };
     }
@@ -349,7 +349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }));
 
   return (
-    <div id="admin-dashboard" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div id="admin-dashboard" className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 space-y-6">
       {/* Header with navigation tabs */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-neutral-800">
         <div>
@@ -721,7 +721,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="text-xs text-neutral-400 flex items-center justify-between pt-1 border-t border-neutral-800/60">
                     <span>Active Leads: <strong className="text-white font-mono">{item.count}</strong></span>
                     <span className="text-[11px] text-neutral-500 truncate max-w-[140px]" title={item.cityList}>
-                      📍 {item.cityList || 'Pune'}
+                      📍 {item.cityList || '—'}
                     </span>
                   </div>
                 </div>
@@ -1455,20 +1455,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
       <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl flex flex-wrap items-center justify-between gap-4 text-xs">
         <div className="flex items-center gap-2 text-neutral-400">
-          <Database className="w-4 h-4 text-neutral-500" />
-          <span>Local CRM Engine • Persistent central source of truth with cross-URL sync</span>
+          <Database className="w-4 h-4 text-emerald-400" />
+          <span>Central CRM Database • Production live persistence with multi-user sync and document preservation</span>
         </div>
-        <button
-          onClick={() => {
-            if (window.confirm('Reset database to clean default state with Amey Kulkarni & sales reps?')) {
-              onResetDatabase();
-            }
-          }}
-          className="px-3 py-1.5 rounded-xl border border-neutral-800 hover:border-rose-500/40 text-neutral-400 hover:text-rose-400 text-xs transition flex items-center gap-1.5"
-        >
-          <RefreshCw className="w-3 h-3" />
-          <span>Reset to Clean Defaults</span>
-        </button>
+        <div className="flex items-center gap-2 text-neutral-500 text-[11px]">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>System Active</span>
+        </div>
       </div>
 
       {/* Add Employee Modal */}

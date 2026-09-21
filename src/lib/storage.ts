@@ -1,4 +1,5 @@
 import { User, Lead, AuditLog, SyncPacket, PipelineStage, NotificationItem, NotificationType, NoteReviewEntry, Priority, CrmTask } from '../types';
+import { resolveRegionAndCity } from './documentParser';
 
 export const STAGES: { id: PipelineStage; label: string; color: string; bg: string; border: string }[] = [
   { id: 'new', label: 'New Inquiries', color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/30' },
@@ -521,14 +522,19 @@ export function getStoredLeads(): Lead[] {
       return INITIAL_LEADS;
     }
     const parsed: Lead[] = JSON.parse(raw);
-    // Ensure all leads have region, city, location, and notesLog array initialized
-    return parsed.map(l => ({
-      ...l,
-      region: l.region || 'Maharashtra',
-      city: l.city || l.location || 'Pune',
-      location: l.city || l.location || 'Pune',
-      notesLog: l.notesLog || [],
-    }));
+    // Ensure all leads have valid region, city, location, and notesLog dynamically resolved
+    return parsed.map(l => {
+      const cityVal = (l.city || l.location || '').trim();
+      const regionVal = (l.region || '').trim();
+      const resolved = resolveRegionAndCity(cityVal, regionVal);
+      return {
+        ...l,
+        region: regionVal || resolved.region,
+        city: cityVal || resolved.city,
+        location: cityVal || resolved.city,
+        notesLog: l.notesLog || [],
+      };
+    });
   } catch {
     return INITIAL_LEADS;
   }

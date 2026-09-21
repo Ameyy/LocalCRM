@@ -114,6 +114,7 @@ export interface Lead {
   nextFollowUp?: string;
   tags: string[];
   activities: Activity[];
+  customFields?: Record<string, any>; // Stores all original document columns/attributes
   createdAt: string;
   updatedAt: string;
   version: number;

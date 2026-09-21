@@ -28,11 +28,12 @@ import {
   ArrowRightLeft,
   Users,
   Check,
-  MapPin
+  MapPin,
+  Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Lead, User, PipelineStage, Priority } from '../types';
-import { downloadExcelTemplate, downloadCsvTemplate } from '../lib/documentParser';
+import { downloadExcelTemplate, downloadCsvTemplate, resolveRegionAndCity } from '../lib/documentParser';
 import { AddNoteReviewModal } from './AddNoteReviewModal';
 
 interface FixedTableViewProps {
@@ -105,15 +106,18 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
   // Row edit drawer state
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
 
+  // Lead Details & Document Columns Inspector modal state
+  const [inspectingLead, setInspectingLead] = useState<Lead | null>(null);
+
   // Note/Review modal state
   const [noteModalLead, setNoteModalLead] = useState<Lead | null>(null);
 
   // Active records: UNIVERSAL VISIBILITY - Same data everywhere viewed by everyone
   const activeLeads = leads.filter((l) => !l.deleted);
 
-  // Available regions list for filtering
+  // Available regions list for filtering dynamically resolved from data
   const availableRegions = Array.from(
-    new Set(activeLeads.map((l) => l.region || 'Maharashtra').filter(Boolean))
+    new Set(activeLeads.map((l) => l.region).filter(Boolean))
   ) as string[];
 
   // Filtering
@@ -139,7 +143,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
       (repFilter === 'me' && (lead.assignedTo === currentUser.id || lead.assignedTo === currentUser.employeeId));
     const matchesStage = stageFilter === 'all' || lead.stage === stageFilter;
     const matchesPriority = priorityFilter === 'all' || lead.priority === priorityFilter;
-    const matchesRegion = regionFilter === 'all' || (lead.region || 'Maharashtra').toLowerCase() === regionFilter.toLowerCase();
+    const matchesRegion = regionFilter === 'all' || (lead.region || '').toLowerCase() === regionFilter.toLowerCase();
 
     return matchesSearch && matchesRep && matchesStage && matchesPriority && matchesRegion;
   });
@@ -230,14 +234,15 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
     const rows = sortedLeads.map((l) => ({
       'Contact Name': l.name,
       'Company': l.company,
-      'Region': l.region || 'Maharashtra',
-      'Location / City': l.city || l.location || 'Pune',
+      'Region': l.region || '—',
+      'Location / City': l.city || l.location || '—',
       'Email': l.email || '',
       'Phone': l.phone || '',
       'Deal Value ($)': l.value || 0,
       'Status / Stage': l.stage.toUpperCase(),
       'Priority': l.priority.toUpperCase(),
       'Assigned Rep': l.assignedName || '',
+      ...(l.customFields || {}),
       'Notes & Remarks': l.notes || '',
       'Notes & Reviews Count': l.notesLog?.length || 0,
       'Last Updated': new Date(l.updatedAt).toLocaleDateString(),
@@ -254,7 +259,6 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
       setSortAsc(!sortAsc);
     } else {
       setSortField(field);
-      setSortAsc(false);
     }
   };
 
@@ -269,11 +273,15 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
       : (originalLead ? originalLead.assignedTo : editingLead.assignedTo);
 
     const assignedUser = users.find((u) => u.id === assignedToId);
+    const rawCity = (editingLead.city || editingLead.location || '').trim();
+    const rawRegion = (editingLead.region || '').trim();
+    const resolved = resolveRegionAndCity(rawCity, rawRegion);
+
     const updated: Lead = {
       ...editingLead,
-      region: (editingLead.region || '').trim() || 'Maharashtra',
-      city: (editingLead.city || editingLead.location || '').trim() || 'Pune',
-      location: (editingLead.city || editingLead.location || '').trim() || 'Pune',
+      region: rawRegion || resolved.region,
+      city: rawCity || resolved.city,
+      location: rawCity || resolved.city,
       assignedTo: assignedToId,
       assignedName: assignedUser ? assignedUser.name : (originalLead?.assignedName || editingLead.assignedName),
       updatedAt: new Date().toISOString(),
@@ -285,7 +293,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
   };
 
   return (
-    <div id="fixed-table-container" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+    <div id="fixed-table-container" className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-6 space-y-5">
       {/* Top Banner & Primary Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-neutral-800">
         <div>
@@ -755,13 +763,31 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                       {/* Name */}
                       <td className="py-3 px-4 font-semibold text-white">
                         <div className="flex items-center gap-2">
-                          <span>{lead.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setInspectingLead(lead)}
+                            className="hover:text-emerald-400 text-left transition font-semibold"
+                            title="Click to view full lead details & document columns"
+                          >
+                            {lead.name}
+                          </button>
                           {lead.tags?.includes('Document Import') && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-emerald-400 font-mono border border-neutral-700">
                               DOC
                             </span>
                           )}
                         </div>
+                        {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setInspectingLead(lead)}
+                            className="text-[9px] px-1.5 py-0.5 mt-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 font-mono transition flex items-center gap-1 cursor-pointer"
+                            title="Click to view all imported document columns"
+                          >
+                            <FileSpreadsheet className="w-2.5 h-2.5" />
+                            <span>{Object.keys(lead.customFields).length} Doc Columns</span>
+                          </button>
+                        )}
                       </td>
 
                       {/* Company */}
@@ -778,10 +804,10 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                           <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                           <div>
                             <span className="font-semibold text-white block">
-                              {lead.city || lead.location || 'Pune'}
+                              {lead.city || lead.location || '—'}
                             </span>
                             <span className="text-[10px] text-neutral-400 block font-medium">
-                              {lead.region || 'Maharashtra'}
+                              {lead.region || ''}
                             </span>
                           </div>
                         </div>
@@ -885,6 +911,15 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* View Full Details & Document Columns */}
+                          <button
+                            onClick={() => setInspectingLead(lead)}
+                            className="p-1.5 text-neutral-400 hover:text-emerald-400 hover:bg-neutral-800 rounded-lg transition cursor-pointer"
+                            title="View Full Lead Details & Uploaded Document Columns"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Quick Add Note / Review */}
                           <button
                             onClick={() => setNoteModalLead(lead)}
@@ -967,12 +1002,13 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-neutral-300 mb-1">Region / State (e.g. Maharashtra) *</label>
+                  <label className="block font-semibold text-neutral-300 mb-1">Region / State *</label>
                   <input
                     type="text"
                     required
                     list="drawer-region-suggestions"
-                    value={editingLead.region || 'Maharashtra'}
+                    value={editingLead.region || ''}
+                    placeholder="e.g. Maharashtra, Karnataka, Gujarat..."
                     onChange={(e) => setEditingLead({ ...editingLead, region: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white focus:border-emerald-500 focus:outline-hidden"
                   />
@@ -985,30 +1021,52 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                     <option value="Telangana" />
                     <option value="Uttar Pradesh" />
                     <option value="Rajasthan" />
+                    <option value="Madhya Pradesh" />
+                    <option value="West Bengal" />
+                    <option value="Kerala" />
+                    <option value="Punjab" />
+                    <option value="Haryana" />
                   </datalist>
                 </div>
                 <div>
-                  <label className="block font-semibold text-neutral-300 mb-1">Location / City (e.g. Pune) *</label>
+                  <label className="block font-semibold text-neutral-300 mb-1">Location / City *</label>
                   <input
                     type="text"
                     required
                     list="drawer-city-suggestions"
-                    value={editingLead.city || editingLead.location || 'Pune'}
-                    onChange={(e) => setEditingLead({ ...editingLead, city: e.target.value, location: e.target.value })}
+                    value={editingLead.city || editingLead.location || ''}
+                    placeholder="e.g. Pune, Bengaluru, Mumbai, Delhi..."
+                    onChange={(e) => {
+                      const newCity = e.target.value;
+                      const resolved = resolveRegionAndCity(newCity, editingLead.region);
+                      setEditingLead({
+                        ...editingLead,
+                        city: newCity,
+                        location: newCity,
+                        region: editingLead.region && editingLead.region !== 'Maharashtra' && editingLead.region !== 'General Territory'
+                          ? editingLead.region
+                          : resolved.region,
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-white focus:border-emerald-500 focus:outline-hidden"
                   />
                   <datalist id="drawer-city-suggestions">
                     <option value="Pune" />
                     <option value="Mumbai" />
-                    <option value="Nagpur" />
-                    <option value="Nashik" />
-                    <option value="Thane" />
-                    <option value="Navi Mumbai" />
-                    <option value="Aurangabad (Chhatrapati Sambhaji Nagar)" />
-                    <option value="Solapur" />
-                    <option value="Kolhapur" />
                     <option value="Bengaluru" />
                     <option value="Hyderabad" />
+                    <option value="Chennai" />
+                    <option value="Delhi" />
+                    <option value="Ahmedabad" />
+                    <option value="Kolkata" />
+                    <option value="Nagpur" />
+                    <option value="Nashik" />
+                    <option value="Jaipur" />
+                    <option value="Surat" />
+                    <option value="Lucknow" />
+                    <option value="Indore" />
+                    <option value="Thane" />
+                    <option value="Navi Mumbai" />
                   </datalist>
                 </div>
               </div>
@@ -1116,6 +1174,31 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                 </div>
               )}
 
+              {/* Auto-Reflected Document Columns (if uploaded from spreadsheet/CSV) */}
+              {editingLead.customFields && Object.keys(editingLead.customFields).length > 0 && (
+                <div className="p-3 bg-neutral-950/80 border border-neutral-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Imported Document Columns ({Object.keys(editingLead.customFields).length})</span>
+                    </span>
+                    <span className="text-[10px] text-neutral-500">Auto-captured from uploaded document</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto pr-1">
+                    {Object.entries(editingLead.customFields).map(([key, val]) => (
+                      <div key={key} className="p-2 bg-neutral-900 border border-neutral-800 rounded-lg">
+                        <div className="text-[10px] font-medium text-neutral-400 truncate capitalize" title={key}>
+                          {key}
+                        </div>
+                        <div className="text-xs font-semibold text-white truncate mt-0.5" title={String(val ?? '')}>
+                          {String(val ?? '—')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block font-semibold text-neutral-300 mb-1">Latest Notes / Summary</label>
                 <textarea
@@ -1200,6 +1283,15 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
             >
               <Zap className="w-3.5 h-3.5 fill-current" />
               <span>{isReassigning ? 'Reassigning...' : 'Reassign Selected (1-Click)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBulkDeleteModal(true)}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ml-1"
+              title="Bulk Delete all selected leads (Admin only)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected ({selectedLeadIds.length})</span>
             </button>
             <button
               type="button"
@@ -1432,7 +1524,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
               <div className="flex justify-between items-center">
                 <span className="text-neutral-400">Location & Region:</span>
                 <span className="text-neutral-200">
-                  {leadToDelete.city || leadToDelete.location || 'Pune'}, {leadToDelete.region || 'Maharashtra'}
+                  {leadToDelete.city || leadToDelete.location || '—'}{leadToDelete.region ? `, ${leadToDelete.region}` : ''}
                 </span>
               </div>
               <div className="flex justify-between items-center">
@@ -1505,7 +1597,7 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
                       <div className="min-w-0 pr-2">
                         <div className="font-semibold text-white truncate">{l.name}</div>
                         <div className="text-[11px] text-neutral-400 truncate">
-                          {l.company} • {l.city || l.location || 'Pune'}, {l.region || 'Maharashtra'}
+                          {l.company} • {l.city || l.location || '—'}{l.region ? `, ${l.region}` : ''}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -1545,6 +1637,233 @@ export const FixedTableView: React.FC<FixedTableViewProps> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Confirm Bulk Delete ({selectedLeadIds.length})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lead Details & Document Inspector Modal (Auto-Reflects All Imported Columns) */}
+      {inspectingLead && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto text-xs text-white">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-neutral-800">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-white">{inspectingLead.name}</h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      {inspectingLead.stage}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      inspectingLead.priority === 'high'
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        : inspectingLead.priority === 'medium'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-neutral-800 text-neutral-400'
+                    }`}>
+                      {inspectingLead.priority} Priority
+                    </span>
+                    {inspectingLead.tags?.includes('Document Import') && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                        Document Import
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-0.5 font-medium">
+                    {inspectingLead.company} • {inspectingLead.city || inspectingLead.location || '—'}{inspectingLead.region ? `, ${inspectingLead.region}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectingLead(null)}
+                className="p-1.5 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Core Metrics Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl">
+                <div className="text-[10px] text-neutral-400 font-medium">Deal Value</div>
+                <div className="text-sm font-mono font-bold text-emerald-400 mt-0.5">
+                  {formatCurrency(inspectingLead.value || 0)}
+                </div>
+              </div>
+              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl">
+                <div className="text-[10px] text-neutral-400 font-medium">Assigned Rep</div>
+                <div className="text-xs font-bold text-neutral-200 mt-0.5 truncate">
+                  {inspectingLead.assignedName || 'Unassigned'}
+                </div>
+              </div>
+              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl">
+                <div className="text-[10px] text-neutral-400 font-medium">Location / City</div>
+                <div className="text-xs font-bold text-white mt-0.5 truncate">
+                  {inspectingLead.city || inspectingLead.location || '—'}
+                </div>
+              </div>
+              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl">
+                <div className="text-[10px] text-neutral-400 font-medium">Region / State</div>
+                <div className="text-xs font-bold text-white mt-0.5 truncate">
+                  {inspectingLead.region || '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* Contact Details */}
+            <div className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-2">
+              <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
+                Direct Contact Information
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-neutral-500 shrink-0" />
+                  <span className="text-neutral-400">Email:</span>
+                  <span className="font-mono text-neutral-200 truncate">{inspectingLead.email || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-neutral-500 shrink-0" />
+                  <span className="text-neutral-400">Phone:</span>
+                  <span className="font-mono text-neutral-200">{inspectingLead.phone || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* All Document Columns & Custom Fields Auto-Reflected */}
+            <div className="p-4 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-xs font-bold text-white">
+                    Auto-Reflected Document Columns &amp; Attributes
+                  </h4>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 font-mono">
+                  {inspectingLead.customFields ? Object.keys(inspectingLead.customFields).length : 0} custom attributes
+                </span>
+              </div>
+
+              {inspectingLead.customFields && Object.keys(inspectingLead.customFields).length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                  {Object.entries(inspectingLead.customFields).map(([colKey, colVal]) => (
+                    <div
+                      key={colKey}
+                      className="p-2.5 bg-neutral-900/90 border border-neutral-800/90 rounded-xl"
+                    >
+                      <div className="text-[10px] font-semibold text-neutral-400 capitalize truncate" title={colKey}>
+                        {colKey}
+                      </div>
+                      <div className="text-xs font-bold text-neutral-100 truncate mt-0.5" title={String(colVal ?? '')}>
+                        {String(colVal ?? '—')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-neutral-900/60 border border-neutral-800/80 rounded-xl text-neutral-400 text-xs">
+                  This record uses standard CRM fields. When you import any spreadsheet or CSV with custom columns (e.g. Industry, Employee Count, Annual Revenue, Department, Source, etc.), they will automatically reflect right here in this details inspector.
+                </div>
+              )}
+            </div>
+
+            {/* Notes & Remarks History */}
+            <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-sky-400" />
+                  <h4 className="text-xs font-bold text-white">
+                    Remarks, Notes &amp; Review History ({inspectingLead.notesLog?.length || (inspectingLead.notes ? 1 : 0)})
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lead = inspectingLead;
+                    setInspectingLead(null);
+                    setNoteModalLead(lead);
+                  }}
+                  className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold cursor-pointer"
+                >
+                  + Add Remark
+                </button>
+              </div>
+
+              {inspectingLead.notesLog && inspectingLead.notesLog.length > 0 ? (
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1 divide-y divide-neutral-900">
+                  {inspectingLead.notesLog.map((log) => (
+                    <div key={log.id} className="pt-2 first:pt-0 space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-neutral-200">{log.authorName}</span>
+                        <div className="flex items-center gap-2 text-neutral-400 font-mono">
+                          {log.rating && (
+                            <span className="text-amber-400 flex items-center gap-0.5">
+                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                              <span>{log.rating}</span>
+                            </span>
+                          )}
+                          <span>{new Date(log.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-neutral-300 leading-relaxed bg-neutral-900/60 p-2 rounded-lg">
+                        {log.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : inspectingLead.notes ? (
+                <div className="p-2.5 bg-neutral-900/60 rounded-xl text-neutral-300 text-xs">
+                  {inspectingLead.notes}
+                </div>
+              ) : (
+                <div className="text-neutral-500 text-xs italic">
+                  No remarks or review entries recorded yet.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-neutral-800">
+              <div className="flex items-center gap-2">
+                {currentUser.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const lead = inspectingLead;
+                      setInspectingLead(null);
+                      setLeadToDelete(lead);
+                    }}
+                    className="px-3.5 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Delete Record</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lead = inspectingLead;
+                    setInspectingLead(null);
+                    setEditingLead(lead);
+                  }}
+                  className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Details</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setInspectingLead(null)}
+                className="px-5 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

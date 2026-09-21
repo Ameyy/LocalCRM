@@ -10,18 +10,579 @@ export interface ParsedDocumentResult {
 }
 
 export const FIXED_TEMPLATE_FIELDS = [
-  { key: 'name', label: 'Contact / Lead Name', required: true, synonyms: ['name', 'full name', 'fullname', 'contact', 'client', 'customer', 'person', 'lead name', 'lead'] },
-  { key: 'company', label: 'Company / Organization', required: false, synonyms: ['company', 'organization', 'org', 'account', 'business', 'employer', 'corp', 'firm', 'agency'] },
-  { key: 'region', label: 'Region / State (e.g. Maharashtra)', required: false, synonyms: ['region', 'state', 'province', 'territory', 'zone', 'area', 'region state'] },
-  { key: 'city', label: 'Location / City (e.g. Pune)', required: false, synonyms: ['location', 'city', 'town', 'place', 'district', 'municipality', 'metro', 'address city'] },
-  { key: 'email', label: 'Email Address', required: false, synonyms: ['email', 'mail', 'e-mail', 'email address', 'contact email'] },
-  { key: 'phone', label: 'Phone Number', required: false, synonyms: ['phone', 'mobile', 'tel', 'telephone', 'cell', 'contact number', 'phone number'] },
-  { key: 'value', label: 'Deal Value / Amount ($)', required: false, synonyms: ['value', 'amount', 'deal', 'deal value', 'revenue', 'price', 'budget', 'cost', 'total', 'worth', 'quote'] },
-  { key: 'stage', label: 'Status / Stage', required: false, synonyms: ['stage', 'status', 'pipeline stage', 'deal stage', 'phase', 'state', 'progress'] },
-  { key: 'priority', label: 'Priority', required: false, synonyms: ['priority', 'urgency', 'importance', 'level', 'rating'] },
-  { key: 'assignedName', label: 'Assigned Sales Rep', required: false, synonyms: ['assigned', 'assigned to', 'assigned rep', 'sales rep', 'owner', 'agent', 'salesperson', 'rep'] },
-  { key: 'notes', label: 'Notes / Details', required: false, synonyms: ['notes', 'note', 'details', 'description', 'comments', 'remarks', 'memo', 'summary'] },
+  { key: 'name', label: 'Contact / Lead Name', required: true, synonyms: ['name', 'full name', 'fullname', 'contact', 'client', 'customer', 'person', 'lead name', 'lead', 'client name', 'customer name', 'account name'] },
+  { key: 'company', label: 'Company / Organization', required: false, synonyms: ['company', 'organization', 'org', 'account', 'business', 'employer', 'corp', 'firm', 'agency', 'enterprise', 'institution'] },
+  { key: 'city', label: 'Location / City', required: false, synonyms: ['city', 'location', 'town', 'place', 'district', 'municipality', 'metro', 'address city', 'city name', 'current city', 'customer city', 'client city', 'branch city', 'office city', 'base city', 'territory', 'target city', 'lead city', 'destination', 'station', 'address', 'area', 'hq', 'branch', 'site', 'work location'] },
+  { key: 'region', label: 'Region / State', required: false, synonyms: ['region', 'state', 'province', 'territory', 'zone', 'area', 'region state', 'state province', 'country state', 'state name', 'state / region', 'region / state'] },
+  { key: 'email', label: 'Email Address', required: false, synonyms: ['email', 'mail', 'e-mail', 'email address', 'contact email', 'work email', 'official email'] },
+  { key: 'phone', label: 'Phone Number', required: false, synonyms: ['phone', 'mobile', 'tel', 'telephone', 'cell', 'contact number', 'phone number', 'mobile number', 'call', 'whatsapp'] },
+  { key: 'value', label: 'Deal Value / Amount ($)', required: false, synonyms: ['value', 'amount', 'deal', 'deal value', 'revenue', 'price', 'budget', 'cost', 'total', 'worth', 'quote', 'turnover', 'annual value', 'opportunity value'] },
+  { key: 'stage', label: 'Status / Stage', required: false, synonyms: ['stage', 'status', 'pipeline stage', 'deal stage', 'phase', 'state', 'progress', 'lead status', 'pipeline'] },
+  { key: 'priority', label: 'Priority', required: false, synonyms: ['priority', 'urgency', 'importance', 'level', 'rating', 'grade', 'tier'] },
+  { key: 'assignedName', label: 'Assigned Sales Rep', required: false, synonyms: ['assigned', 'assigned to', 'assigned rep', 'sales rep', 'owner', 'agent', 'salesperson', 'rep', 'lead owner', 'executive'] },
+  { key: 'notes', label: 'Notes / Details', required: false, synonyms: ['notes', 'note', 'details', 'description', 'comments', 'remarks', 'memo', 'summary', 'feedback', 'requirement'] },
 ];
+
+/**
+ * Dynamic City to Region / State Knowledge Base
+ */
+export const CITY_REGION_MAP: Record<string, string> = {
+  // Maharashtra
+  'pune': 'Maharashtra',
+  'mumbai': 'Maharashtra',
+  'bombay': 'Maharashtra',
+  'navi mumbai': 'Maharashtra',
+  'new mumbai': 'Maharashtra',
+  'thane': 'Maharashtra',
+  'nagpur': 'Maharashtra',
+  'nashik': 'Maharashtra',
+  'nasik': 'Maharashtra',
+  'aurangabad': 'Maharashtra',
+  'chhatrapati sambhajinagar': 'Maharashtra',
+  'chhatrapati sambhaji nagar': 'Maharashtra',
+  'sambhajinagar': 'Maharashtra',
+  'kolhapur': 'Maharashtra',
+  'solapur': 'Maharashtra',
+  'sholapur': 'Maharashtra',
+  'sangli': 'Maharashtra',
+  'satara': 'Maharashtra',
+  'jalgaon': 'Maharashtra',
+  'akola': 'Maharashtra',
+  'latur': 'Maharashtra',
+  'dhule': 'Maharashtra',
+  'ahmednagar': 'Maharashtra',
+  'ahilyanagar': 'Maharashtra',
+  'chandrapur': 'Maharashtra',
+  'parbhani': 'Maharashtra',
+  'jalna': 'Maharashtra',
+  'ratnagiri': 'Maharashtra',
+  'sindhudurg': 'Maharashtra',
+  'wardha': 'Maharashtra',
+  'gondia': 'Maharashtra',
+  'bhandara': 'Maharashtra',
+  'yavatmal': 'Maharashtra',
+  'washim': 'Maharashtra',
+  'buldhana': 'Maharashtra',
+  'nandurbar': 'Maharashtra',
+  'osmanabad': 'Maharashtra',
+  'dharashiv': 'Maharashtra',
+  'beed': 'Maharashtra',
+  'palghar': 'Maharashtra',
+  'raigad': 'Maharashtra',
+  'kalyan': 'Maharashtra',
+  'dombivli': 'Maharashtra',
+  'dombivali': 'Maharashtra',
+  'ulhasnagar': 'Maharashtra',
+  'mira bhayandar': 'Maharashtra',
+  'vasai': 'Maharashtra',
+  'virar': 'Maharashtra',
+  'panvel': 'Maharashtra',
+  'pimpri': 'Maharashtra',
+  'chinchwad': 'Maharashtra',
+  'pimpri chinchwad': 'Maharashtra',
+  'baramati': 'Maharashtra',
+  'malegaon': 'Maharashtra',
+  'ichalkaranji': 'Maharashtra',
+  'alibag': 'Maharashtra',
+  'karad': 'Maharashtra',
+  'chiplun': 'Maharashtra',
+  'bhiwandi': 'Maharashtra',
+
+  // Karnataka
+  'bengaluru': 'Karnataka',
+  'bangalore': 'Karnataka',
+  'mysore': 'Karnataka',
+  'mysuru': 'Karnataka',
+  'mangalore': 'Karnataka',
+  'mangaluru': 'Karnataka',
+  'hubli': 'Karnataka',
+  'hubballi': 'Karnataka',
+  'dharwad': 'Karnataka',
+  'belgaum': 'Karnataka',
+  'belagavi': 'Karnataka',
+  'gulbarga': 'Karnataka',
+  'kalaburagi': 'Karnataka',
+  'davanagere': 'Karnataka',
+  'davangere': 'Karnataka',
+  'bellary': 'Karnataka',
+  'ballari': 'Karnataka',
+  'bijapur': 'Karnataka',
+  'vijayapura': 'Karnataka',
+  'shimoga': 'Karnataka',
+  'shivamogga': 'Karnataka',
+  'tumkur': 'Karnataka',
+  'tumakuru': 'Karnataka',
+  'raichur': 'Karnataka',
+  'bidar': 'Karnataka',
+  'hospet': 'Karnataka',
+  'hosapete': 'Karnataka',
+  'gadag': 'Karnataka',
+  'udupi': 'Karnataka',
+  'kolar': 'Karnataka',
+  'mandya': 'Karnataka',
+  'hassan': 'Karnataka',
+  'chikmagalur': 'Karnataka',
+  'chikkamagaluru': 'Karnataka',
+  'bagalkot': 'Karnataka',
+  'karwar': 'Karnataka',
+  'ramanagara': 'Karnataka',
+  'yadgir': 'Karnataka',
+  'chitradurga': 'Karnataka',
+  'bhadravati': 'Karnataka',
+
+  // Telangana
+  'hyderabad': 'Telangana',
+  'secunderabad': 'Telangana',
+  'warangal': 'Telangana',
+  'nizamabad': 'Telangana',
+  'khammam': 'Telangana',
+  'karimnagar': 'Telangana',
+  'ramagundam': 'Telangana',
+  'mahbubnagar': 'Telangana',
+  'nalgonda': 'Telangana',
+  'adilabad': 'Telangana',
+  'suryapet': 'Telangana',
+  'miryalaguda': 'Telangana',
+  'siddipet': 'Telangana',
+  'jagtial': 'Telangana',
+  'mancherial': 'Telangana',
+
+  // Andhra Pradesh
+  'visakhapatnam': 'Andhra Pradesh',
+  'vizag': 'Andhra Pradesh',
+  'vijayawada': 'Andhra Pradesh',
+  'guntur': 'Andhra Pradesh',
+  'nellore': 'Andhra Pradesh',
+  'kurnool': 'Andhra Pradesh',
+  'kakinada': 'Andhra Pradesh',
+  'rajahmundry': 'Andhra Pradesh',
+  'rajamahendravaram': 'Andhra Pradesh',
+  'tirupati': 'Andhra Pradesh',
+  'kadapa': 'Andhra Pradesh',
+  'cuddapah': 'Andhra Pradesh',
+  'anantapur': 'Andhra Pradesh',
+  'vizianagaram': 'Andhra Pradesh',
+  'eluru': 'Andhra Pradesh',
+  'ongole': 'Andhra Pradesh',
+  'nandyal': 'Andhra Pradesh',
+  'machilipatnam': 'Andhra Pradesh',
+  'adoni': 'Andhra Pradesh',
+  'tenali': 'Andhra Pradesh',
+  'chittoor': 'Andhra Pradesh',
+  'amaravati': 'Andhra Pradesh',
+
+  // Tamil Nadu
+  'chennai': 'Tamil Nadu',
+  'madras': 'Tamil Nadu',
+  'coimbatore': 'Tamil Nadu',
+  'madurai': 'Tamil Nadu',
+  'tiruchirappalli': 'Tamil Nadu',
+  'trichy': 'Tamil Nadu',
+  'salem': 'Tamil Nadu',
+  'tirunelveli': 'Tamil Nadu',
+  'tiruppur': 'Tamil Nadu',
+  'ranipet': 'Tamil Nadu',
+  'nagercoil': 'Tamil Nadu',
+  'thanjavur': 'Tamil Nadu',
+  'dindigul': 'Tamil Nadu',
+  'vellore': 'Tamil Nadu',
+  'kancheepuram': 'Tamil Nadu',
+  'kanchipuram': 'Tamil Nadu',
+  'erode': 'Tamil Nadu',
+  'tiruvannamalai': 'Tamil Nadu',
+  'hosur': 'Tamil Nadu',
+  'ooty': 'Tamil Nadu',
+  'kumbakonam': 'Tamil Nadu',
+  'cuddalore': 'Tamil Nadu',
+  'tuticorin': 'Tamil Nadu',
+  'thoothukudi': 'Tamil Nadu',
+
+  // Gujarat
+  'ahmedabad': 'Gujarat',
+  'surat': 'Gujarat',
+  'vadodara': 'Gujarat',
+  'baroda': 'Gujarat',
+  'rajkot': 'Gujarat',
+  'bhavnagar': 'Gujarat',
+  'jamnagar': 'Gujarat',
+  'junagadh': 'Gujarat',
+  'gandhinagar': 'Gujarat',
+  'gandhidham': 'Gujarat',
+  'anand': 'Gujarat',
+  'navsari': 'Gujarat',
+  'morbi': 'Gujarat',
+  'nadiad': 'Gujarat',
+  'surendranagar': 'Gujarat',
+  'bharuch': 'Gujarat',
+  'mehsana': 'Gujarat',
+  'bhuj': 'Gujarat',
+  'porbandar': 'Gujarat',
+  'palanpur': 'Gujarat',
+  'valsad': 'Gujarat',
+  'vapi': 'Gujarat',
+  'gondal': 'Gujarat',
+  'veraval': 'Gujarat',
+  'godhra': 'Gujarat',
+  'patan': 'Gujarat',
+  'kalol': 'Gujarat',
+  'dahod': 'Gujarat',
+  'ankleshwar': 'Gujarat',
+
+  // Delhi / NCR
+  'delhi': 'Delhi NCR',
+  'new delhi': 'Delhi NCR',
+  'central delhi': 'Delhi NCR',
+  'east delhi': 'Delhi NCR',
+  'north delhi': 'Delhi NCR',
+  'south delhi': 'Delhi NCR',
+  'west delhi': 'Delhi NCR',
+  'noida': 'Uttar Pradesh',
+  'greater noida': 'Uttar Pradesh',
+  'gurgaon': 'Haryana',
+  'gurugram': 'Haryana',
+  'faridabad': 'Haryana',
+  'ghaziabad': 'Uttar Pradesh',
+
+  // Uttar Pradesh
+  'lucknow': 'Uttar Pradesh',
+  'kanpur': 'Uttar Pradesh',
+  'agra': 'Uttar Pradesh',
+  'meerut': 'Uttar Pradesh',
+  'varanasi': 'Uttar Pradesh',
+  'kashi': 'Uttar Pradesh',
+  'banaras': 'Uttar Pradesh',
+  'prayagraj': 'Uttar Pradesh',
+  'allahabad': 'Uttar Pradesh',
+  'bareilly': 'Uttar Pradesh',
+  'aligarh': 'Uttar Pradesh',
+  'moradabad': 'Uttar Pradesh',
+  'saharanpur': 'Uttar Pradesh',
+  'gorakhpur': 'Uttar Pradesh',
+  'firozabad': 'Uttar Pradesh',
+  'jhansi': 'Uttar Pradesh',
+  'muzaffarnagar': 'Uttar Pradesh',
+  'mathura': 'Uttar Pradesh',
+  'rampur': 'Uttar Pradesh',
+  'shahjahanpur': 'Uttar Pradesh',
+  'ayodhya': 'Uttar Pradesh',
+  'faizabad': 'Uttar Pradesh',
+  'etawah': 'Uttar Pradesh',
+  'mirzapur': 'Uttar Pradesh',
+  'bulandshahr': 'Uttar Pradesh',
+  'hapur': 'Uttar Pradesh',
+
+  // Rajasthan
+  'jaipur': 'Rajasthan',
+  'jodhpur': 'Rajasthan',
+  'kota': 'Rajasthan',
+  'bikaner': 'Rajasthan',
+  'ajmer': 'Rajasthan',
+  'udaipur': 'Rajasthan',
+  'bhilwara': 'Rajasthan',
+  'alwar': 'Rajasthan',
+  'bharatpur': 'Rajasthan',
+  'sikar': 'Rajasthan',
+  'pali': 'Rajasthan',
+  'sri ganganagar': 'Rajasthan',
+  'ganganagar': 'Rajasthan',
+  'kishangarh': 'Rajasthan',
+  'chittorgarh': 'Rajasthan',
+  'jaisalmer': 'Rajasthan',
+  'mount abu': 'Rajasthan',
+
+  // West Bengal
+  'kolkata': 'West Bengal',
+  'calcutta': 'West Bengal',
+  'howrah': 'West Bengal',
+  'durgapur': 'West Bengal',
+  'asansol': 'West Bengal',
+  'siliguri': 'West Bengal',
+  'bardhaman': 'West Bengal',
+  'burdwan': 'West Bengal',
+  'malda': 'West Bengal',
+  'kharagpur': 'West Bengal',
+  'haldia': 'West Bengal',
+  'darjeeling': 'West Bengal',
+  'kalimpong': 'West Bengal',
+
+  // Madhya Pradesh
+  'indore': 'Madhya Pradesh',
+  'bhopal': 'Madhya Pradesh',
+  'jabalpur': 'Madhya Pradesh',
+  'gwalior': 'Madhya Pradesh',
+  'ujjain': 'Madhya Pradesh',
+  'sagar': 'Madhya Pradesh',
+  'dewas': 'Madhya Pradesh',
+  'satna': 'Madhya Pradesh',
+  'ratlam': 'Madhya Pradesh',
+  'rewa': 'Madhya Pradesh',
+  'katni': 'Madhya Pradesh',
+  'singrauli': 'Madhya Pradesh',
+  'khandwa': 'Madhya Pradesh',
+  'burhanpur': 'Madhya Pradesh',
+  'chhindwara': 'Madhya Pradesh',
+  'pithampur': 'Madhya Pradesh',
+
+  // Kerala
+  'kochi': 'Kerala',
+  'cochin': 'Kerala',
+  'ernakulam': 'Kerala',
+  'thiruvananthapuram': 'Kerala',
+  'trivandrum': 'Kerala',
+  'kozhikode': 'Kerala',
+  'calicut': 'Kerala',
+  'thrissur': 'Kerala',
+  'trichur': 'Kerala',
+  'kollam': 'Kerala',
+  'quilon': 'Kerala',
+  'kannur': 'Kerala',
+  'alappuzha': 'Kerala',
+  'alleppey': 'Kerala',
+  'kottayam': 'Kerala',
+  'palakkad': 'Kerala',
+  'malappuram': 'Kerala',
+  'munnar': 'Kerala',
+  'wayanad': 'Kerala',
+
+  // Punjab
+  'ludhiana': 'Punjab',
+  'amritsar': 'Punjab',
+  'jalandhar': 'Punjab',
+  'patiala': 'Punjab',
+  'bathinda': 'Punjab',
+  'mohali': 'Punjab',
+  'sas nagar': 'Punjab',
+  'hoshiarpur': 'Punjab',
+  'pathankot': 'Punjab',
+  'phagwara': 'Punjab',
+
+  // Haryana
+  'panipat': 'Haryana',
+  'ambala': 'Haryana',
+  'rohtak': 'Haryana',
+  'hisar': 'Haryana',
+  'karnal': 'Haryana',
+  'sonipat': 'Haryana',
+  'panchkula': 'Haryana',
+  'bhiwani': 'Haryana',
+  'sirsa': 'Haryana',
+  'rewari': 'Haryana',
+
+  // Chandigarh
+  'chandigarh': 'Chandigarh',
+
+  // Bihar
+  'patna': 'Bihar',
+  'gaya': 'Bihar',
+  'bhagalpur': 'Bihar',
+  'muzaffarpur': 'Bihar',
+  'purnia': 'Bihar',
+  'darbhanga': 'Bihar',
+  'bihar sharif': 'Bihar',
+  'arrah': 'Bihar',
+  'begusarai': 'Bihar',
+  'katihar': 'Bihar',
+  'chhapra': 'Bihar',
+  'hajipur': 'Bihar',
+
+  // Odisha
+  'bhubaneswar': 'Odisha',
+  'cuttack': 'Odisha',
+  'rourkela': 'Odisha',
+  'berhampur': 'Odisha',
+  'sambalpur': 'Odisha',
+  'puri': 'Odisha',
+  'balasore': 'Odisha',
+
+  // Jharkhand
+  'ranchi': 'Jharkhand',
+  'jamshedpur': 'Jharkhand',
+  'tatanagar': 'Jharkhand',
+  'dhanbad': 'Jharkhand',
+  'bokaro': 'Jharkhand',
+  'deoghar': 'Jharkhand',
+  'hazaribagh': 'Jharkhand',
+
+  // Assam & North East
+  'guwahati': 'Assam',
+  'gauhati': 'Assam',
+  'silchar': 'Assam',
+  'dibrugarh': 'Assam',
+  'jorhat': 'Assam',
+  'tezpur': 'Assam',
+  'shillong': 'Meghalaya',
+  'agartala': 'Tripura',
+  'imphal': 'Manipur',
+  'aizawl': 'Mizoram',
+  'kohima': 'Nagaland',
+  'dimapur': 'Nagaland',
+  'gangtok': 'Sikkim',
+  'itanagar': 'Arunachal Pradesh',
+
+  // Uttarakhand
+  'dehradun': 'Uttarakhand',
+  'haridwar': 'Uttarakhand',
+  'roorkee': 'Uttarakhand',
+  'haldwani': 'Uttarakhand',
+  'rudrapur': 'Uttarakhand',
+  'rishikesh': 'Uttarakhand',
+  'nainital': 'Uttarakhand',
+  'mussoorie': 'Uttarakhand',
+
+  // Himachal Pradesh
+  'shimla': 'Himachal Pradesh',
+  'dharamshala': 'Himachal Pradesh',
+  'solan': 'Himachal Pradesh',
+  'mandi': 'Himachal Pradesh',
+  'kullu': 'Himachal Pradesh',
+  'manali': 'Himachal Pradesh',
+  'baddi': 'Himachal Pradesh',
+
+  // Goa
+  'panaji': 'Goa',
+  'panjim': 'Goa',
+  'margao': 'Goa',
+  'madgaon': 'Goa',
+  'vasco da gama': 'Goa',
+  'vasco': 'Goa',
+  'mapusa': 'Goa',
+  'ponda': 'Goa',
+
+  // Chhattisgarh
+  'raipur': 'Chhattisgarh',
+  'bhilai': 'Chhattisgarh',
+  'bilaspur': 'Chhattisgarh',
+  'korba': 'Chhattisgarh',
+  'durg': 'Chhattisgarh',
+
+  // Jammu & Kashmir & Ladakh
+  'srinagar': 'Jammu & Kashmir',
+  'jammu': 'Jammu & Kashmir',
+  'leh': 'Ladakh',
+
+  // Puducherry
+  'puducherry': 'Puducherry',
+  'pondicherry': 'Puducherry',
+
+  // International / Global
+  'dubai': 'UAE',
+  'abu dhabi': 'UAE',
+  'sharjah': 'UAE',
+  'doha': 'Qatar',
+  'riyadh': 'Saudi Arabia',
+  'jeddah': 'Saudi Arabia',
+  'muscat': 'Oman',
+  'kuwait': 'Kuwait',
+  'kuwait city': 'Kuwait',
+  'manama': 'Bahrain',
+  'london': 'United Kingdom',
+  'manchester': 'United Kingdom',
+  'birmingham': 'United Kingdom',
+  'edinburgh': 'United Kingdom',
+  'dublin': 'Ireland',
+  'new york': 'New York, USA',
+  'nyc': 'New York, USA',
+  'san francisco': 'California, USA',
+  'los angeles': 'California, USA',
+  'chicago': 'Illinois, USA',
+  'austin': 'Texas, USA',
+  'houston': 'Texas, USA',
+  'dallas': 'Texas, USA',
+  'seattle': 'Washington, USA',
+  'boston': 'Massachusetts, USA',
+  'atlanta': 'Georgia, USA',
+  'miami': 'Florida, USA',
+  'singapore': 'Singapore',
+  'tokyo': 'Japan',
+  'sydney': 'Australia',
+  'melbourne': 'Australia',
+  'toronto': 'Canada',
+  'vancouver': 'Canada',
+  'paris': 'France',
+  'berlin': 'Germany',
+  'frankfurt': 'Germany',
+  'amsterdam': 'Netherlands',
+  'zurich': 'Switzerland',
+};
+
+/**
+ * Dynamically resolves both City and Region wisely based on imported file contents
+ */
+export function resolveRegionAndCity(
+  cityInput?: string | null,
+  explicitRegion?: string | null
+): { city: string; region: string } {
+  let cleanCity = String(cityInput || '').trim();
+  let cleanRegion = String(explicitRegion || '').trim();
+
+  // If city string has comma (e.g. "Austin, Texas" or "Mumbai, Maharashtra" or "Bengaluru, Karnataka")
+  if (cleanCity.includes(',') && !cleanRegion) {
+    const parts = cleanCity.split(',').map((p) => p.trim());
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      cleanCity = parts[0];
+      cleanRegion = parts[1];
+    }
+  } else if (cleanCity.includes('-') && !cleanRegion && cleanCity.split('-').length === 2) {
+    const parts = cleanCity.split('-').map((p) => p.trim());
+    if (parts[0] && parts[1] && parts[0].length > 2 && parts[1].length > 2) {
+      cleanCity = parts[0];
+      cleanRegion = parts[1];
+    }
+  }
+
+  // If explicitRegion was provided and is meaningful, respect and use it
+  if (
+    cleanRegion &&
+    cleanRegion.toLowerCase() !== 'n/a' &&
+    cleanRegion.toLowerCase() !== 'none' &&
+    cleanRegion.toLowerCase() !== 'undefined' &&
+    cleanRegion.toLowerCase() !== 'null'
+  ) {
+    return {
+      city: cleanCity || 'General City',
+      region: cleanRegion,
+    };
+  }
+
+  // If no city provided at all
+  if (!cleanCity) {
+    return {
+      city: 'General',
+      region: cleanRegion || 'General Territory',
+    };
+  }
+
+  // Normalize key for lookup
+  const normalizedKey = cleanCity
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Direct map check
+  if (CITY_REGION_MAP[normalizedKey]) {
+    return {
+      city: cleanCity,
+      region: CITY_REGION_MAP[normalizedKey],
+    };
+  }
+
+  // Substring / fuzzy check for known major cities
+  for (const [knownCity, region] of Object.entries(CITY_REGION_MAP)) {
+    if (normalizedKey.includes(knownCity) && knownCity.length >= 4) {
+      return {
+        city: cleanCity,
+        region,
+      };
+    }
+  }
+
+  // If city is specified but not in our dictionary, do NOT force Maharashtra
+  return {
+    city: cleanCity,
+    region: cleanRegion || `${cleanCity} Area`,
+  };
+}
 
 /**
  * Intelligent Column Detection: finds the best matching column for each fixed template field
@@ -283,12 +844,61 @@ export function mapRowsToFixedTemplate(
     const companyVal = columnMapping['company'] ? String(row[columnMapping['company']] || '').trim() : '';
     const emailVal = columnMapping['email'] ? String(row[columnMapping['email']] || '').trim() : '';
     const phoneVal = columnMapping['phone'] ? String(row[columnMapping['phone']] || '').trim() : '';
-    const regionVal = columnMapping['region'] ? String(row[columnMapping['region']] || '').trim() : '';
-    const cityVal = columnMapping['city'] ? String(row[columnMapping['city']] || '').trim() : '';
     
-    // Standard Region & City defaults (e.g. Maharashtra & Pune)
-    const standardRegion = regionVal || 'Maharashtra';
-    const standardCity = cityVal || 'Pune';
+    // 1. Dynamic City extraction: check mapped column first, then inspect all row columns for city/location/town/district
+    let rawCity = columnMapping['city'] ? String(row[columnMapping['city']] || '').trim() : '';
+    if (!rawCity) {
+      const cityKey = Object.keys(row).find((k) => {
+        const lk = k.toLowerCase().replace(/[_\W]+/g, ' ').trim();
+        return (
+          lk === 'city' ||
+          lk === 'location' ||
+          lk === 'town' ||
+          lk === 'district' ||
+          lk === 'metro' ||
+          lk === 'place' ||
+          lk.includes('city') ||
+          lk.includes('location') ||
+          lk.includes('town')
+        );
+      });
+      if (cityKey && row[cityKey]) {
+        rawCity = String(row[cityKey]).trim();
+      }
+    }
+
+    // 2. Dynamic Region extraction: check mapped column first, then inspect all row columns for state/region/zone
+    let rawRegion = columnMapping['region'] ? String(row[columnMapping['region']] || '').trim() : '';
+    if (!rawRegion) {
+      const regionKey = Object.keys(row).find((k) => {
+        const lk = k.toLowerCase().replace(/[_\W]+/g, ' ').trim();
+        return (
+          lk === 'region' ||
+          lk === 'state' ||
+          lk === 'province' ||
+          lk === 'zone' ||
+          lk.includes('region') ||
+          lk.includes('state')
+        );
+      });
+      if (regionKey && row[regionKey]) {
+        rawRegion = String(row[regionKey]).trim();
+      }
+    }
+
+    // 3. Wisely resolve Region and City dynamically based on input and knowledge dictionary
+    const { city: standardCity, region: standardRegion } = resolveRegionAndCity(rawCity, rawRegion);
+    
+    // 4. Capture all original document columns dynamically into customFields
+    const customFields: Record<string, any> = {};
+    for (const [colName, val] of Object.entries(row)) {
+      if (val !== undefined && val !== null) {
+        const cleanVal = typeof val === 'string' ? val.trim() : val;
+        if (cleanVal !== '') {
+          customFields[colName] = cleanVal;
+        }
+      }
+    }
     
     // Value sanitization
     let numValue = 0;
@@ -350,6 +960,7 @@ export function mapRowsToFixedTemplate(
       assignedName: assignedName || 'Sarah Jenkins',
       notes: notesVal || 'Imported via document template',
       tags: ['Document Import'],
+      customFields,
       activities: [
         {
           id: 'act_imp_' + Date.now() + '_' + index,

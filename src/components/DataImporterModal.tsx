@@ -375,8 +375,8 @@ export const DataImporterModal: React.FC<DataImporterModalProps> = ({
                           <td className="py-2 px-3 font-semibold text-white">{item.name}</td>
                           <td className="py-2 px-3 text-neutral-400">{item.company}</td>
                           <td className="py-2 px-3 text-neutral-300 font-medium">
-                            <span className="text-white">{item.city || item.location || 'Pune'}</span>
-                            <span className="text-neutral-500 text-[11px]">, {item.region || 'Maharashtra'}</span>
+                            <span className="text-white">{item.city || item.location || '—'}</span>
+                            {item.region ? <span className="text-neutral-500 text-[11px]">, {item.region}</span> : null}
                           </td>
                           <td className="py-2 px-3 text-neutral-400 font-mono text-[11px]">{item.email || '—'}</td>
                           <td className="py-2 px-3 text-neutral-400">{item.phone || '—'}</td>
