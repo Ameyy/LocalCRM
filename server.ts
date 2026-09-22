@@ -1,10 +1,15 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import {
+  readCrmStateFromSupabase,
+  writeCrmStateToSupabase,
+  queueStateOperation,
+  CrmStatePayload,
+} from './src/server/supabase';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -13,27 +18,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-user-id, x-user-role');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
   next();
 });
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'crm_store.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  } catch (err) {
-    console.error('Failed to create data dir:', err);
-  }
-}
-
 // Initial default state for the CRM
-const DEFAULT_INITIAL_STATE = {
+const DEFAULT_INITIAL_STATE: CrmStatePayload = {
   version: 1,
   updatedAt: new Date().toISOString(),
   users: [
@@ -388,7 +381,7 @@ const DEFAULT_INITIAL_STATE = {
     {
       id: 'audit_init_1',
       action: 'SYSTEM_BOOT',
-      details: 'Connected CRM Database Server online with multi-URL synchronization',
+      details: 'Connected CRM Cloud Database Server online with Supabase synchronization',
       userId: 'system',
       userName: 'Central Server',
       timestamp: '2026-09-20T05:00:00.000Z',
@@ -406,52 +399,12 @@ const DEFAULT_INITIAL_STATE = {
   ],
 };
 
-function readDb() {
-  try {
-    if (!fs.existsSync(DATA_FILE)) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(DEFAULT_INITIAL_STATE, null, 2), 'utf-8');
-      return DEFAULT_INITIAL_STATE;
-    }
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    const data = JSON.parse(raw);
-
-    // Auto-migrate any old Alex Mitchell reference to Amey Kulkarni
-    let changed = false;
-    if (data.users) {
-      for (const u of data.users) {
-        if (u.name === 'Alex Mitchell' || u.id === 'user_admin') {
-          if (u.name !== 'Amey Kulkarni') {
-            u.name = 'Amey Kulkarni';
-            u.email = 'ameykulkarni1993@gmail.com';
-            changed = true;
-          }
-        }
-      }
-    }
-    if (!data.tasks) {
-      data.tasks = DEFAULT_INITIAL_STATE.tasks;
-      changed = true;
-    }
-    if (changed) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    }
-    return data;
-  } catch (e) {
-    console.error('Error reading DB:', e);
-    return DEFAULT_INITIAL_STATE;
-  }
+async function readDb(): Promise<CrmStatePayload> {
+  return readCrmStateFromSupabase(DEFAULT_INITIAL_STATE);
 }
 
-function writeDb(data: any) {
-  try {
-    data.updatedAt = new Date().toISOString();
-    data.version = (data.version || 1) + 1;
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    return data;
-  } catch (e) {
-    console.error('Error writing DB:', e);
-    return data;
-  }
+async function writeDb(data: any): Promise<CrmStatePayload> {
+  return writeCrmStateToSupabase(data);
 }
 
 // Helper to determine caller identity and role for RBAC
@@ -482,419 +435,552 @@ function sanitizeUser(u: any) {
 
 // API Routes
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', serverTime: new Date().toISOString() });
-});
-
-// GET ALL DATA - Full connected state with RBAC Data Isolation
-app.get('/api/crm/data', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
-
-  if (!caller.isAdmin && caller.id) {
-    // Data isolation for employee: Return strictly assigned work and sanitize roster
-    const filteredLeads = (current.leads || []).filter(
-      (l: any) => !l.deleted && (l.assignedTo === caller.id || l.assignedTo === caller.user?.id)
-    );
-    const filteredTasks = (current.tasks || []).filter(
-      (t: any) => t.assignedTo === caller.id || t.assignedTo === caller.user?.id
-    );
-    const filteredAudit = (current.auditLogs || []).filter(
-      (a: any) => a.userId === caller.id || a.userId === caller.user?.id
-    );
-
-    return res.json({
-      status: 'success',
-      data: {
-        version: current.version,
-        updatedAt: current.updatedAt,
-        leads: filteredLeads,
-        tasks: filteredTasks,
-        users: (current.users || []).map(sanitizeUser),
-        notifications: (current.notifications || []).slice(-50),
-        auditLogs: filteredAudit.slice(-50),
-      },
-      serverTime: new Date().toISOString(),
-    });
-  }
-
-  // Admin caller: return full database with sanitized users
   res.json({
-    status: 'success',
-    data: {
-      ...current,
-      users: (current.users || []).map(sanitizeUser),
-    },
+    status: 'ok',
+    storage: 'supabase',
     serverTime: new Date().toISOString(),
   });
 });
 
+// GET ALL DATA - Full connected state with RBAC Data Isolation
+app.get('/api/crm/data', async (req, res) => {
+  try {
+    const current = await readDb();
+    const caller = getCaller(req, current.users || []);
+
+    if (!caller.isAdmin && caller.id) {
+      // Data isolation for employee: Return strictly assigned work and sanitize roster
+      const filteredLeads = (current.leads || []).filter(
+        (l: any) => !l.deleted && (l.assignedTo === caller.id || l.assignedTo === caller.user?.id)
+      );
+      const filteredTasks = (current.tasks || []).filter(
+        (t: any) => t.assignedTo === caller.id || t.assignedTo === caller.user?.id
+      );
+      const filteredAudit = (current.auditLogs || []).filter(
+        (a: any) => a.userId === caller.id || a.userId === caller.user?.id
+      );
+
+      return res.json({
+        status: 'success',
+        data: {
+          version: current.version,
+          updatedAt: current.updatedAt,
+          leads: filteredLeads,
+          tasks: filteredTasks,
+          users: (current.users || []).map(sanitizeUser),
+          notifications: (current.notifications || []).slice(-50),
+          auditLogs: filteredAudit.slice(-50),
+        },
+        serverTime: new Date().toISOString(),
+      });
+    }
+
+    // Admin caller: return full database with sanitized users
+    res.json({
+      status: 'success',
+      data: {
+        ...current,
+        users: (current.users || []).map(sanitizeUser),
+      },
+      serverTime: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error('Error in GET /api/crm/data:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Database unavailable',
+      message: err.message || 'Unable to retrieve CRM state from Supabase',
+    });
+  }
+});
+
 // FULL SYNC / BATCH MERGE (Admin or synchronized background)
-app.post('/api/crm/sync', (req, res) => {
-  const incoming = req.body;
-  const current = readDb();
+app.post('/api/crm/sync', async (req, res) => {
+  try {
+    const incoming = req.body;
+    const saved = await queueStateOperation(async () => {
+      const current = await readDb();
 
-  if (incoming.leads && Array.isArray(incoming.leads)) {
-    const leadMap = new Map();
-    for (const l of current.leads || []) leadMap.set(l.id, l);
-    for (const l of incoming.leads) {
-      const existing = leadMap.get(l.id);
-      if (!existing || (l.version || 0) >= (existing.version || 0)) {
-        leadMap.set(l.id, l);
+      if (incoming.leads && Array.isArray(incoming.leads)) {
+        const leadMap = new Map();
+        for (const l of current.leads || []) leadMap.set(l.id, l);
+        for (const l of incoming.leads) {
+          const existing = leadMap.get(l.id);
+          if (!existing || (l.version || 0) >= (existing.version || 0)) {
+            leadMap.set(l.id, l);
+          }
+        }
+        current.leads = Array.from(leadMap.values());
       }
-    }
-    current.leads = Array.from(leadMap.values());
-  }
 
-  if (incoming.tasks && Array.isArray(incoming.tasks)) {
-    const taskMap = new Map();
-    for (const t of current.tasks || []) taskMap.set(t.id, t);
-    for (const t of incoming.tasks) taskMap.set(t.id, t);
-    current.tasks = Array.from(taskMap.values());
-  }
-
-  if (incoming.users && Array.isArray(incoming.users)) {
-    const userMap = new Map();
-    for (const u of current.users || []) userMap.set(u.id, u);
-    for (const u of incoming.users) {
-      const ex = userMap.get(u.id);
-      // Preserve existing password if not updated
-      const merged = { ...ex, ...u };
-      if (!u.passwordHash && ex?.passwordHash) {
-        merged.passwordHash = ex.passwordHash;
+      if (incoming.tasks && Array.isArray(incoming.tasks)) {
+        const taskMap = new Map();
+        for (const t of current.tasks || []) taskMap.set(t.id, t);
+        for (const t of incoming.tasks) taskMap.set(t.id, t);
+        current.tasks = Array.from(taskMap.values());
       }
-      userMap.set(u.id, merged);
-    }
-    current.users = Array.from(userMap.values());
-  }
 
-  if (incoming.notifications && Array.isArray(incoming.notifications)) {
-    const notifMap = new Map();
-    for (const n of current.notifications || []) notifMap.set(n.id, n);
-    for (const n of incoming.notifications) notifMap.set(n.id, n);
-    current.notifications = Array.from(notifMap.values()).slice(-200);
-  }
+      if (incoming.users && Array.isArray(incoming.users)) {
+        const userMap = new Map();
+        for (const u of current.users || []) userMap.set(u.id, u);
+        for (const u of incoming.users) {
+          const ex = userMap.get(u.id);
+          // Preserve existing password if not updated
+          const merged = { ...ex, ...u };
+          if (!u.passwordHash && ex?.passwordHash) {
+            merged.passwordHash = ex.passwordHash;
+          }
+          userMap.set(u.id, merged);
+        }
+        current.users = Array.from(userMap.values());
+      }
 
-  if (incoming.auditLogs && Array.isArray(incoming.auditLogs)) {
-    const auditMap = new Map();
-    for (const a of current.auditLogs || []) auditMap.set(a.id, a);
-    for (const a of incoming.auditLogs) auditMap.set(a.id, a);
-    current.auditLogs = Array.from(auditMap.values()).slice(-300);
-  }
+      if (incoming.notifications && Array.isArray(incoming.notifications)) {
+        const notifMap = new Map();
+        for (const n of current.notifications || []) notifMap.set(n.id, n);
+        for (const n of incoming.notifications) notifMap.set(n.id, n);
+        current.notifications = Array.from(notifMap.values()).slice(-200);
+      }
 
-  const saved = writeDb(current);
-  res.json({
-    status: 'success',
-    data: {
-      ...saved,
-      users: (saved.users || []).map(sanitizeUser),
-    },
-  });
+      if (incoming.auditLogs && Array.isArray(incoming.auditLogs)) {
+        const auditMap = new Map();
+        for (const a of current.auditLogs || []) auditMap.set(a.id, a);
+        for (const a of incoming.auditLogs) auditMap.set(a.id, a);
+        current.auditLogs = Array.from(auditMap.values()).slice(-300);
+      }
+
+      return writeDb(current);
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        ...saved,
+        users: (saved.users || []).map(sanitizeUser),
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/sync:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Sync failed',
+      message: err.message || 'Unable to sync CRM state with Supabase',
+    });
+  }
 });
 
 // UPDATE / CREATE LEADS with RBAC Isolation
-app.post('/api/crm/leads', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
-  const { leads, lead, action } = req.body;
+app.post('/api/crm/leads', async (req, res) => {
+  try {
+    const { leads, lead, action } = req.body;
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const caller = getCaller(req, current.users || []);
 
-  if (Array.isArray(leads)) {
-    if (!caller.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized: Batch lead replacement requires Admin role' });
-    }
-    current.leads = leads;
-  } else if (lead) {
-    const index = current.leads.findIndex((l: any) => l.id === lead.id);
-    if (index >= 0) {
-      const existing = current.leads[index];
-      // RBAC check: Non-admin can only update their own assigned lead
-      if (!caller.isAdmin && existing.assignedTo && existing.assignedTo !== caller.id) {
-        return res.status(403).json({ error: 'Access denied: You are not authorized to modify another employee\'s lead' });
-      }
-
-      if (action === 'delete') {
+      if (Array.isArray(leads)) {
         if (!caller.isAdmin) {
-          return res.status(403).json({ error: 'Unauthorized: Only administrator can delete leads' });
+          return { error: 'Unauthorized: Batch lead replacement requires Admin role', status: 403 };
         }
-        current.leads[index].deleted = true;
-        current.leads[index].updatedAt = new Date().toISOString();
-      } else {
-        current.leads[index] = { ...existing, ...lead, updatedAt: new Date().toISOString() };
-      }
-    } else {
-      // New lead creation
-      const newLead = {
-        ...lead,
-        assignedTo: caller.isAdmin ? (lead.assignedTo || caller.id) : caller.id,
-        assignedName: caller.isAdmin ? (lead.assignedName || caller.user?.name) : (caller.user?.name || 'Employee'),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      current.leads.unshift(newLead);
-    }
-  }
+        current.leads = leads;
+      } else if (lead) {
+        if (!current.leads) current.leads = [];
+        const index = current.leads.findIndex((l: any) => l.id === lead.id);
+        if (index >= 0) {
+          const existing = current.leads[index];
+          // RBAC check: Non-admin can only update their own assigned lead
+          if (!caller.isAdmin && existing.assignedTo && existing.assignedTo !== caller.id) {
+            return { error: 'Access denied: You are not authorized to modify another employee\'s lead', status: 403 };
+          }
 
-  const saved = writeDb(current);
-  res.json({ status: 'success', data: saved });
+          if (action === 'delete') {
+            if (!caller.isAdmin) {
+              return { error: 'Unauthorized: Only administrator can delete leads', status: 403 };
+            }
+            current.leads[index].deleted = true;
+            current.leads[index].updatedAt = new Date().toISOString();
+          } else {
+            current.leads[index] = { ...existing, ...lead, updatedAt: new Date().toISOString() };
+          }
+        } else {
+          // New lead creation
+          const newLead = {
+            ...lead,
+            assignedTo: caller.isAdmin ? (lead.assignedTo || caller.id) : caller.id,
+            assignedName: caller.isAdmin ? (lead.assignedName || caller.user?.name) : (caller.user?.name || 'Employee'),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          current.leads.unshift(newLead);
+        }
+      }
+
+      const saved = await writeDb(current);
+      return { saved };
+    });
+
+    if ('error' in result && result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    res.json({ status: 'success', data: result.saved });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/leads:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Lead update failed',
+      message: err.message || 'Unable to update lead in Supabase',
+    });
+  }
 });
 
 // BULK REASSIGN PIPELINED LEADS (Admin 1-Click Assignment)
-app.post('/api/crm/leads/bulk-reassign', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
+app.post('/api/crm/leads/bulk-reassign', async (req, res) => {
+  try {
+    const { targetUserId, targetUserName, leadIds, stage, fromUserId, pipelinedOnly = true } = req.body;
 
-  if (!caller.isAdmin) {
-    return res.status(403).json({ error: 'Unauthorized: Bulk lead reassignment requires Admin role' });
-  }
-
-  const { targetUserId, targetUserName, leadIds, stage, fromUserId, pipelinedOnly = true } = req.body;
-
-  if (!targetUserId) {
-    return res.status(400).json({ error: 'targetUserId is required' });
-  }
-
-  const targetUser = (current.users || []).find((u: any) => u.id === targetUserId || u.employeeId === targetUserId);
-  const finalTargetName = targetUserName || targetUser?.name || 'Assigned Representative';
-
-  let reassignedCount = 0;
-  const now = new Date().toISOString();
-
-  current.leads = (current.leads || []).map((lead: any) => {
-    if (lead.deleted) return lead;
-
-    // Filter by leadIds if provided
-    if (Array.isArray(leadIds) && leadIds.length > 0) {
-      if (!leadIds.includes(lead.id)) return lead;
-    } else {
-      // Filter by pipeline stage if pipelinedOnly is true (default)
-      if (pipelinedOnly && (lead.stage === 'won' || lead.stage === 'lost')) {
-        return lead;
-      }
-      if (stage && stage !== 'all' && lead.stage !== stage) {
-        return lead;
-      }
-      if (fromUserId && fromUserId !== 'all' && lead.assignedTo !== fromUserId) {
-        return lead;
-      }
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'targetUserId is required' });
     }
 
-    reassignedCount++;
-    const prevAssignee = lead.assignedName || 'Previous Rep';
-    const activities = lead.activities || [];
-    activities.unshift({
-      id: 'act_reassign_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      leadId: lead.id,
-      type: 'stage_change',
-      description: `1-Click Reassigned from ${prevAssignee} to ${finalTargetName} by Admin`,
-      performedBy: caller.id,
-      performedByName: caller.user?.name || 'Administrator',
-      timestamp: now,
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const caller = getCaller(req, current.users || []);
+
+      if (!caller.isAdmin) {
+        return { error: 'Unauthorized: Bulk lead reassignment requires Admin role', status: 403 };
+      }
+
+      const targetUser = (current.users || []).find((u: any) => u.id === targetUserId || u.employeeId === targetUserId);
+      const finalTargetName = targetUserName || targetUser?.name || 'Assigned Representative';
+
+      let reassignedCount = 0;
+      const now = new Date().toISOString();
+
+      current.leads = (current.leads || []).map((lead: any) => {
+        if (lead.deleted) return lead;
+
+        if (Array.isArray(leadIds) && leadIds.length > 0) {
+          if (!leadIds.includes(lead.id)) return lead;
+        } else {
+          if (pipelinedOnly && (lead.stage === 'won' || lead.stage === 'lost')) {
+            return lead;
+          }
+          if (stage && stage !== 'all' && lead.stage !== stage) {
+            return lead;
+          }
+          if (fromUserId && fromUserId !== 'all' && lead.assignedTo !== fromUserId) {
+            return lead;
+          }
+        }
+
+        reassignedCount++;
+        const prevAssignee = lead.assignedName || 'Previous Rep';
+        const activities = lead.activities || [];
+        activities.unshift({
+          id: 'act_reassign_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          leadId: lead.id,
+          type: 'stage_change',
+          description: `1-Click Reassigned from ${prevAssignee} to ${finalTargetName} by Admin`,
+          performedBy: caller.id,
+          performedByName: caller.user?.name || 'Administrator',
+          timestamp: now,
+        });
+
+        return {
+          ...lead,
+          assignedTo: targetUserId,
+          assignedName: finalTargetName,
+          updatedAt: now,
+          version: (lead.version || 1) + 1,
+          activities,
+        };
+      });
+
+      if (!current.auditLogs) current.auditLogs = [];
+      current.auditLogs.unshift({
+        id: 'audit_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+        action: 'BULK_REASSIGN_PIPELINE',
+        details: `Admin ${caller.user?.name || 'Admin'} reassigned ${reassignedCount} pipelined leads to ${finalTargetName}`,
+        userId: caller.id,
+        userName: caller.user?.name || 'Administrator',
+        timestamp: now,
+        category: 'deal',
+      });
+
+      if (!current.notifications) current.notifications = [];
+      current.notifications.unshift({
+        id: 'notif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+        type: 'deal_updated',
+        title: `⚡ Bulk Pipeline Reassignment: ${reassignedCount} Leads`,
+        message: `Admin ${caller.user?.name || 'Admin'} reassigned ${reassignedCount} pipelined leads to ${finalTargetName}.`,
+        actorId: caller.id,
+        actorName: caller.user?.name || 'Administrator',
+        actorRole: 'admin',
+        targetAudience: 'all',
+        timestamp: now,
+        readBy: [],
+      });
+
+      const saved = await writeDb(current);
+      return { reassignedCount, finalTargetName, saved };
     });
 
-    return {
-      ...lead,
-      assignedTo: targetUserId,
-      assignedName: finalTargetName,
-      updatedAt: now,
-      version: (lead.version || 1) + 1,
-      activities,
-    };
-  });
+    if ('error' in result && result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
 
-  // Log audit
-  if (!current.auditLogs) current.auditLogs = [];
-  current.auditLogs.unshift({
-    id: 'audit_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-    action: 'BULK_REASSIGN_PIPELINE',
-    details: `Admin ${caller.user?.name || 'Admin'} reassigned ${reassignedCount} pipelined leads to ${finalTargetName}`,
-    userId: caller.id,
-    userName: caller.user?.name || 'Administrator',
-    timestamp: now,
-    category: 'deal',
-  });
-
-  // Notify team
-  if (!current.notifications) current.notifications = [];
-  current.notifications.unshift({
-    id: 'notif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-    type: 'deal_updated',
-    title: `⚡ Bulk Pipeline Reassignment: ${reassignedCount} Leads`,
-    message: `Admin ${caller.user?.name || 'Admin'} reassigned ${reassignedCount} pipelined leads to ${finalTargetName}.`,
-    actorId: caller.id,
-    actorName: caller.user?.name || 'Administrator',
-    actorRole: 'admin',
-    targetAudience: 'all',
-    timestamp: now,
-    readBy: [],
-  });
-
-  const saved = writeDb(current);
-  res.json({
-    status: 'success',
-    reassignedCount,
-    targetUserId,
-    targetUserName: finalTargetName,
-    data: saved,
-  });
+    res.json({
+      status: 'success',
+      reassignedCount: result.reassignedCount,
+      targetUserId,
+      targetUserName: result.finalTargetName,
+      data: result.saved,
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/leads/bulk-reassign:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Reassignment failed',
+      message: err.message || 'Unable to reassign leads in Supabase',
+    });
+  }
 });
 
 // TASKS MANAGEMENT with RBAC Isolation
-app.post('/api/crm/tasks', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
-  const { task, action, taskId } = req.body;
+app.post('/api/crm/tasks', async (req, res) => {
+  try {
+    const { task, action, taskId } = req.body;
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const caller = getCaller(req, current.users || []);
 
-  if (!current.tasks) current.tasks = [];
+      if (!current.tasks) current.tasks = [];
 
-  if (action === 'delete' && taskId) {
-    if (!caller.isAdmin) {
-      return res.status(403).json({ error: 'Unauthorized: Only administrator can delete tasks' });
-    }
-    current.tasks = current.tasks.filter((t: any) => t.id !== taskId);
-  } else if (task) {
-    const index = current.tasks.findIndex((t: any) => t.id === task.id);
-    if (index >= 0) {
-      const existing = current.tasks[index];
-      // Employee can update status/notes of their assigned task
-      if (!caller.isAdmin && existing.assignedTo !== caller.id) {
-        return res.status(403).json({ error: 'Access denied: You can only update tasks assigned to you' });
+      if (action === 'delete' && taskId) {
+        if (!caller.isAdmin) {
+          return { error: 'Unauthorized: Only administrator can delete tasks', status: 403 };
+        }
+        current.tasks = current.tasks.filter((t: any) => t.id !== taskId);
+      } else if (task) {
+        const index = current.tasks.findIndex((t: any) => t.id === task.id);
+        if (index >= 0) {
+          const existing = current.tasks[index];
+          // Employee can update status/notes of their assigned task
+          if (!caller.isAdmin && existing.assignedTo !== caller.id) {
+            return { error: 'Access denied: You can only update tasks assigned to you', status: 403 };
+          }
+          current.tasks[index] = { ...existing, ...task, updatedAt: new Date().toISOString() };
+        } else {
+          if (!caller.isAdmin) {
+            return { error: 'Unauthorized: Only administrator can create new tasks', status: 403 };
+          }
+          current.tasks.unshift(task);
+        }
       }
-      current.tasks[index] = { ...existing, ...task, updatedAt: new Date().toISOString() };
-    } else {
-      if (!caller.isAdmin) {
-        return res.status(403).json({ error: 'Unauthorized: Only administrator can create new tasks' });
-      }
-      current.tasks.unshift(task);
+
+      const saved = await writeDb(current);
+      return { saved };
+    });
+
+    if ('error' in result && result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
     }
+
+    res.json({ status: 'success', data: result.saved });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/tasks:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Task operation failed',
+      message: err.message || 'Unable to update task in Supabase',
+    });
   }
-
-  const saved = writeDb(current);
-  res.json({ status: 'success', data: saved });
 });
 
 // EMPLOYEES / USERS MANAGEMENT (Strictly Administrator Only)
-app.post('/api/crm/users', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
+app.post('/api/crm/users', async (req, res) => {
+  try {
+    const { user, userId, action, updates } = req.body;
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const caller = getCaller(req, current.users || []);
 
-  if (!caller.isAdmin) {
-    return res.status(403).json({ error: 'Unauthorized: Only administrator can manage employee accounts' });
+      if (!caller.isAdmin) {
+        return { error: 'Unauthorized: Only administrator can manage employee accounts', status: 403 };
+      }
+
+      if (!current.users) current.users = [];
+
+      if (action === 'delete' && userId) {
+        if (userId === 'user_admin') {
+          return { error: 'Cannot delete primary admin account', status: 403 };
+        }
+        current.users = current.users.filter((u: any) => u.id !== userId);
+      } else if (action === 'update' && userId && updates) {
+        const index = current.users.findIndex((u: any) => u.id === userId);
+        if (index >= 0) {
+          current.users[index] = { ...current.users[index], ...updates };
+        }
+      } else if (user) {
+        const index = current.users.findIndex((u: any) => u.id === user.id);
+        if (index >= 0) {
+          current.users[index] = { ...current.users[index], ...user };
+        } else {
+          current.users.push(user);
+        }
+      }
+
+      const saved = await writeDb(current);
+      return { saved };
+    });
+
+    if ('error' in result) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    res.json({
+      status: 'success',
+      data: {
+        ...result.saved,
+        users: (result.saved.users || []).map(sanitizeUser),
+      },
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/users:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'User management failed',
+      message: err.message || 'Unable to update user accounts in Supabase',
+    });
   }
-
-  const { user, userId, action, updates } = req.body;
-  if (!current.users) current.users = [];
-
-  if (action === 'delete' && userId) {
-    if (userId === 'user_admin') {
-      return res.status(403).json({ error: 'Cannot delete primary admin account' });
-    }
-    current.users = current.users.filter((u: any) => u.id !== userId);
-  } else if (action === 'update' && userId && updates) {
-    const index = current.users.findIndex((u: any) => u.id === userId);
-    if (index >= 0) {
-      current.users[index] = { ...current.users[index], ...updates };
-    }
-  } else if (user) {
-    const index = current.users.findIndex((u: any) => u.id === user.id);
-    if (index >= 0) {
-      current.users[index] = { ...current.users[index], ...user };
-    } else {
-      current.users.push(user);
-    }
-  }
-
-  const saved = writeDb(current);
-  res.json({
-    status: 'success',
-    data: {
-      ...saved,
-      users: (saved.users || []).map(sanitizeUser),
-    },
-  });
 });
 
 // ADMIN RESET EMPLOYEE PASSWORD (Generates temporary password, marks requiresPasswordReset)
-app.post('/api/crm/reset-password', (req, res) => {
-  const current = readDb();
-  const caller = getCaller(req, current.users || []);
+app.post('/api/crm/reset-password', async (req, res) => {
+  try {
+    const { userId, temporaryPassword } = req.body;
+    if (!userId || !temporaryPassword) {
+      return res.status(400).json({ error: 'Target userId and temporaryPassword are required' });
+    }
 
-  if (!caller.isAdmin) {
-    return res.status(403).json({ error: 'Unauthorized: Only administrator can reset employee passwords' });
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const caller = getCaller(req, current.users || []);
+
+      if (!caller.isAdmin) {
+        return { error: 'Unauthorized: Only administrator can reset employee passwords', status: 403 };
+      }
+
+      const targetUser = (current.users || []).find((u: any) => u.id === userId);
+      if (!targetUser) {
+        return { error: 'Employee account not found', status: 404 };
+      }
+
+      targetUser.passwordHash = temporaryPassword.trim();
+      targetUser.requiresPasswordReset = true;
+      targetUser.passwordChangedAt = new Date().toISOString();
+
+      const saved = await writeDb(current);
+      return { targetUser, saved };
+    });
+
+    if ('error' in result && result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    res.json({
+      status: 'success',
+      message: 'Temporary password generated successfully',
+      temporaryPassword,
+      user: sanitizeUser(result.targetUser),
+      data: result.saved,
+    });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/reset-password:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Password reset failed',
+      message: err.message || 'Unable to reset employee password in Supabase',
+    });
   }
-
-  const { userId, temporaryPassword } = req.body;
-  if (!userId || !temporaryPassword) {
-    return res.status(400).json({ error: 'Target userId and temporaryPassword are required' });
-  }
-
-  const user = current.users.find((u: any) => u.id === userId);
-  if (!user) {
-    return res.status(404).json({ error: 'Employee account not found' });
-  }
-
-  user.passwordHash = temporaryPassword.trim();
-  user.requiresPasswordReset = true;
-  user.passwordChangedAt = new Date().toISOString();
-
-  const saved = writeDb(current);
-  res.json({
-    status: 'success',
-    message: 'Temporary password generated successfully',
-    temporaryPassword,
-    user: sanitizeUser(user),
-    data: saved,
-  });
 });
 
 // SALESPERSON SELF PROFILE UPDATE (Name & Password)
-app.post('/api/crm/profile', (req, res) => {
-  const current = readDb();
-  const { userId, name, password } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
-  }
-
-  const user = current.users.find((u: any) => u.id === userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  const oldName = user.name;
-  if (name && name.trim()) {
-    user.name = name.trim();
-  }
-  if (password && password.trim()) {
-    user.passwordHash = password.trim();
-    user.requiresPasswordReset = false;
-    user.passwordChangedAt = new Date().toISOString();
-  }
-
-  // Also update assignedName on leads and tasks if name changed
-  if (name && name.trim() && name.trim() !== oldName) {
-    if (current.leads) {
-      current.leads.forEach((l: any) => {
-        if (l.assignedTo === userId) {
-          l.assignedName = name.trim();
-        }
-      });
+app.post('/api/crm/profile', async (req, res) => {
+  try {
+    const { userId, name, password } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
     }
-    if (current.tasks) {
-      current.tasks.forEach((t: any) => {
-        if (t.assignedTo === userId) {
-          t.assignedName = name.trim();
-        }
-      });
-    }
-  }
 
-  const saved = writeDb(current);
-  res.json({ status: 'success', user: sanitizeUser(user), data: saved });
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const user = (current.users || []).find((u: any) => u.id === userId);
+      if (!user) {
+        return { error: 'User not found', status: 404 };
+      }
+
+      const oldName = user.name;
+      if (name && name.trim()) {
+        user.name = name.trim();
+      }
+      if (password && password.trim()) {
+        user.passwordHash = password.trim();
+        user.requiresPasswordReset = false;
+        user.passwordChangedAt = new Date().toISOString();
+      }
+
+      if (name && name.trim() && name.trim() !== oldName) {
+        if (current.leads) {
+          current.leads.forEach((l: any) => {
+            if (l.assignedTo === userId) {
+              l.assignedName = name.trim();
+            }
+          });
+        }
+        if (current.tasks) {
+          current.tasks.forEach((t: any) => {
+            if (t.assignedTo === userId) {
+              t.assignedName = name.trim();
+            }
+          });
+        }
+      }
+
+      const saved = await writeDb(current);
+      return { user, saved };
+    });
+
+    if ('error' in result && result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    res.json({ status: 'success', user: sanitizeUser(result.user), data: result.saved });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/profile:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Profile update failed',
+      message: err.message || 'Unable to update profile in Supabase',
+    });
+  }
 });
 
 // RESET TO CLEAN DEFAULTS
-app.post('/api/crm/reset', (req, res) => {
-  const saved = writeDb(DEFAULT_INITIAL_STATE);
-  res.json({ status: 'success', data: saved });
+app.post('/api/crm/reset', async (req, res) => {
+  try {
+    const saved = await queueStateOperation(async () => {
+      return writeDb(JSON.parse(JSON.stringify(DEFAULT_INITIAL_STATE)));
+    });
+    res.json({ status: 'success', data: saved });
+  } catch (err: any) {
+    console.error('Error in POST /api/crm/reset:', err);
+    res.status(503).json({
+      status: 'error',
+      error: 'Reset failed',
+      message: err.message || 'Unable to reset CRM database in Supabase',
+    });
+  }
 });
 
 async function startServer() {
@@ -914,8 +1000,14 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CRM Central Server running on http://0.0.0.0:${PORT}`);
+    console.log(`CRM Central Server running on http://0.0.0.0:${PORT} [Supabase Persistence]`);
   });
 }
 
-startServer();
+// Start standalone Express server if not in Vercel Serverless environment
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export { app };
+export default app;
