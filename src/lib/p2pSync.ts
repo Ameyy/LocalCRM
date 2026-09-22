@@ -89,7 +89,10 @@ class LocalSyncEngine {
   }
 
   /**
-   * Broadcast local state change to all local browser tabs / windows and backend server
+   * Broadcast local state change to peer local browser tabs / windows via BroadcastChannel
+   * Note: We do NOT push stale local storage packets to /api/crm/sync, because Supabase
+   * is the single authoritative source of truth. Mutations are written directly to /api/crm/*
+   * and fetched authoritatively from Supabase.
    */
   public broadcastLocalChange(currentUser?: User | null) {
     const packet = this.createSyncPacket(currentUser);
@@ -101,17 +104,6 @@ class LocalSyncEngine {
         packet,
       });
     }
-
-    // Also push to persistent backend API so other URLs/devices get the updates instantly
-    syncWithServer({
-      leads: packet.leads,
-      users: packet.users,
-      tasks: packet.tasks,
-      notifications: packet.notifications,
-      auditLogs: packet.auditLogs,
-    }).catch(() => {
-      // offline fallback
-    });
 
     this.emit({ type: 'leads_updated', payload: { source: 'local' } });
   }

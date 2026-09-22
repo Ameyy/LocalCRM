@@ -559,6 +559,99 @@ app.get("/api/health", (req, res) => {
     serverTime: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
+function verifyUserPassword(entered, storedHashOrPlain) {
+  if (!storedHashOrPlain) return false;
+  const cleanEntered = entered.trim();
+  if (cleanEntered === storedHashOrPlain) return true;
+  let h = 3735928559;
+  for (let i = 0; i < cleanEntered.length; i++) {
+    h = Math.imul(h ^ cleanEntered.charCodeAt(i), 2654435761);
+  }
+  const fallbackHash = "h_" + ((h ^ h >>> 16) >>> 0).toString(16);
+  if (fallbackHash === storedHashOrPlain) return true;
+  return false;
+}
+app.post("/api/crm/auth/login", async (req, res) => {
+  try {
+    const { username, password, loginMode } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({
+        status: "error",
+        message: "Username and password are required"
+      });
+    }
+    const cleanUsername = String(username).trim().toLowerCase();
+    let authenticatedUser = null;
+    const result = await queueStateOperation(async () => {
+      const current = await readDb();
+      const users = current.users || [];
+      const user = users.find((u) => {
+        const uName = String(u.username || "").toLowerCase();
+        const empId = String(u.employeeId || "").toLowerCase();
+        const email = String(u.email || "").toLowerCase();
+        return uName === cleanUsername || empId === cleanUsername || email === cleanUsername;
+      });
+      if (!user) {
+        return {
+          errorStatus: 404,
+          message: loginMode === "admin" ? "Admin account not found. Please check your Administrator ID." : "Employee User ID not found. Contact your Administrator to generate your credentials."
+        };
+      }
+      if (user.active === false) {
+        return {
+          errorStatus: 403,
+          message: `Account for ${user.name} is deactivated. Please contact Administrator Amey Kulkarni.`
+        };
+      }
+      if (loginMode === "admin" && user.role !== "admin") {
+        return {
+          errorStatus: 403,
+          message: "Access Denied: This User ID does not have Administrator privileges. Please use Employee Login."
+        };
+      }
+      const storedHash = user.passwordHash || user.rawPassword;
+      const isMatch = verifyUserPassword(password, storedHash);
+      if (!isMatch) {
+        return {
+          errorStatus: 401,
+          message: "Incorrect password. Please verify your credentials."
+        };
+      }
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      user.lastLogin = now;
+      if (!current.auditLogs) current.auditLogs = [];
+      current.auditLogs.unshift({
+        id: "audit_login_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+        action: "USER_LOGIN",
+        details: `Signed in to CRM (${user.role}) from web client`,
+        userId: user.id,
+        userName: user.name,
+        timestamp: now,
+        category: "auth"
+      });
+      current.auditLogs = current.auditLogs.slice(0, 300);
+      await writeDb(current);
+      authenticatedUser = user;
+      return { success: true };
+    });
+    if ("errorStatus" in result && result.errorStatus) {
+      return res.status(result.errorStatus).json({
+        status: "error",
+        message: result.message
+      });
+    }
+    res.json({
+      status: "success",
+      user: sanitizeUser(authenticatedUser)
+    });
+  } catch (err) {
+    console.error("Error in POST /api/crm/auth/login:", err);
+    res.status(503).json({
+      status: "error",
+      message: "Unable to connect to the CRM database. Please check your connection and try again."
+    });
+  }
+});
 app.get("/api/crm/data", async (req, res) => {
   try {
     const current = await readDb();

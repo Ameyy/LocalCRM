@@ -8,12 +8,8 @@ import { User, Lead, AuditLog, NotificationItem, CrmTask } from './types';
 import { 
   getStoredSession, 
   saveSession, 
-  getStoredUsers, 
-  getStoredLeads, 
-  getStoredTasks,
-  getStoredAudit, 
-  getStoredNotifications,
   getNotificationsForUser,
+  runLegacyCrmStorageCleanup,
   addNotification,
   markNotificationAsRead,
   markAllNotificationsAsRead,
@@ -27,16 +23,11 @@ import {
   deleteTask,
   deleteTasks,
   deleteLeads,
-  mergeLeads,
-  mergeTasks,
-  mergeUsers,
-  mergeNotifications,
-  mergeAuditLogs,
   logAudit, 
   resetDatabaseToDefaults 
 } from './lib/storage';
 import { syncEngine } from './lib/p2pSync';
-import { fetchCrmData, syncWithServer } from './lib/api';
+import { fetchCrmData, saveLeadToServer, saveTaskToServer, saveUserToServer, resetServerDatabase } from './lib/api';
 import { AuthScreen } from './components/AuthScreen';
 import { Navbar } from './components/Navbar';
 import { FixedTableView } from './components/FixedTableView';
@@ -48,18 +39,19 @@ import { AddLeadModal } from './components/AddLeadModal';
 import { AddNoteReviewModal } from './components/AddNoteReviewModal';
 import { ProfileModal } from './components/ProfileModal';
 import { SyncNotification } from './components/SyncNotification';
-import { Lock, ShieldAlert } from 'lucide-react';
+import { Lock, ShieldAlert, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => getStoredSession());
-  const [users, setUsers] = useState<User[]>(() => getStoredUsers());
-  const [leads, setLeads] = useState<Lead[]>(() => getStoredLeads());
-  const [tasks, setTasks] = useState<CrmTask[]>(() => getStoredTasks());
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => getStoredAudit());
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    const session = getStoredSession();
-    return session ? getNotificationsForUser(session) : [];
-  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [tasks, setTasks] = useState<CrmTask[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  // Application data synchronization states
+  const [isLoadingCrmData, setIsLoadingCrmData] = useState<boolean>(true);
+  const [dbConnectionError, setDbConnectionError] = useState<string | null>(null);
 
   const [currentTab, setCurrentTab] = useState<'table' | 'notifications' | 'tasks' | 'admin'>('table');
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,147 +90,139 @@ export default function App() {
     }
   }, [currentUser?.role]);
 
-  // Refresh data from local storage
-  const reloadFromStorage = useCallback(() => {
-    const freshLeads = getStoredLeads();
-    const freshUsers = getStoredUsers();
-    const freshTasks = getStoredTasks();
-    const freshAudit = getStoredAudit();
-    setLeads(freshLeads);
-    setUsers(freshUsers);
-    setTasks(freshTasks);
-    setAuditLogs(freshAudit);
+  // Primary authoritative loader: loads CRM state directly from Supabase
+  const loadCrmStateFromSupabase = useCallback(async (isInitial = false) => {
+    try {
+      const response = await fetchCrmData();
+      if (!response.success || !response.data) {
+        if (isInitial) {
+          setDbConnectionError('Unable to connect to the CRM database. Please check your connection and try again.');
+          setIsLoadingCrmData(false);
+        }
+        return;
+      }
 
-    const activeUser = getStoredSession();
-    if (activeUser) {
-      setNotifications(getNotificationsForUser(activeUser));
+      const serverData = response.data;
+      setDbConnectionError(null);
+
+      // Authoritatively update in-memory CRM application state from Supabase
+      if (Array.isArray(serverData.leads)) {
+        setLeads(serverData.leads);
+        saveLeads(serverData.leads);
+      }
+      if (Array.isArray(serverData.users)) {
+        setUsers(serverData.users);
+        saveUsers(serverData.users);
+
+        // Keep current authenticated user session aligned with Supabase updates
+        const me = currentUserRef.current;
+        if (me) {
+          const updatedMe = serverData.users.find((u) => u.id === me.id);
+          if (updatedMe) {
+            saveSession(updatedMe);
+            setCurrentUser(updatedMe);
+          }
+        }
+      }
+      if (Array.isArray(serverData.tasks)) {
+        setTasks(serverData.tasks);
+        saveTasks(serverData.tasks);
+      }
+      if (Array.isArray(serverData.auditLogs)) {
+        setAuditLogs(serverData.auditLogs);
+      }
+      if (Array.isArray(serverData.notifications)) {
+        const me = currentUserRef.current;
+        if (me) {
+          setNotifications(serverData.notifications.filter((n) => !n.targetAudience || n.targetAudience === 'all' || (n.targetAudience === 'admin_only' && me.role === 'admin')));
+        } else {
+          setNotifications(serverData.notifications);
+        }
+      }
+
+      if (isInitial) {
+        setIsLoadingCrmData(false);
+      }
+    } catch (err: any) {
+      if (isInitial) {
+        setDbConnectionError('Unable to connect to the CRM database. Please check your connection and try again.');
+        setIsLoadingCrmData(false);
+      }
     }
   }, []);
+
+  // Run legacy storage migration and initial data load on startup
+  useEffect(() => {
+    runLegacyCrmStorageCleanup();
+    loadCrmStateFromSupabase(true);
+  }, [loadCrmStateFromSupabase]);
 
   // Multi-tab local BroadcastChannel sync listener
   useEffect(() => {
     const unsubscribe = syncEngine.subscribe((event) => {
       if (event.type === 'leads_updated' || event.type === 'sync_success') {
-        reloadFromStorage();
+        loadCrmStateFromSupabase(false);
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [reloadFromStorage]);
+  }, [loadCrmStateFromSupabase]);
 
-  // Live Cross-URL Server Polling (Ensures every URL/browser syncs in real-time)
+  // Live Cross-URL Server Polling against Supabase (every 3.5 seconds)
   useEffect(() => {
     let isMounted = true;
 
-    const pullServerUpdates = async () => {
-      try {
-        const serverData = await fetchCrmData();
-        if (!serverData || !isMounted) return;
-
-        let hasNewData = false;
-
-        // Merge leads
-        if (serverData.leads && serverData.leads.length > 0) {
-          const currentLeads = getStoredLeads();
-          const { merged, changesCount } = mergeLeads(currentLeads, serverData.leads);
-          if (changesCount > 0) {
-            saveLeads(merged);
-            setLeads(merged);
-            hasNewData = true;
-          }
-        }
-
-        // Merge users
-        if (serverData.users && serverData.users.length > 0) {
-          const currentUsers = getStoredUsers();
-          const { merged, changesCount } = mergeUsers(currentUsers, serverData.users);
-          if (changesCount > 0) {
-            saveUsers(merged);
-            setUsers(merged);
-            hasNewData = true;
-
-            // If current user details changed on server, update current user session
-            const me = currentUserRef.current;
-            if (me) {
-              const updatedMe = merged.find((u) => u.id === me.id);
-              if (updatedMe && (updatedMe.name !== me.name || updatedMe.rawPassword !== me.rawPassword)) {
-                saveSession(updatedMe);
-                setCurrentUser(updatedMe);
-              }
-            }
-          }
-        }
-
-        // Merge tasks
-        if (serverData.tasks && serverData.tasks.length > 0) {
-          const currentTasks = getStoredTasks();
-          const { merged, changesCount } = mergeTasks(currentTasks, serverData.tasks);
-          if (changesCount > 0) {
-            saveTasks(merged);
-            setTasks(merged);
-            hasNewData = true;
-          }
-        }
-
-        // Merge notifications
-        if (serverData.notifications && serverData.notifications.length > 0) {
-          const currentNotifs = getStoredNotifications();
-          const merged = mergeNotifications(currentNotifs, serverData.notifications);
-          if (merged.length !== currentNotifs.length) {
-            localStorage.setItem('localcrm_notifications_v1', JSON.stringify(merged));
-            const me = currentUserRef.current;
-            if (me) {
-              setNotifications(getNotificationsForUser(me));
-            }
-          }
-        }
-
-        if (hasNewData) {
-          reloadFromStorage();
-        }
-      } catch {
-        // Offline mode or transient network issue - safe to ignore
+    const interval = setInterval(() => {
+      if (isMounted) {
+        loadCrmStateFromSupabase(false);
       }
-    };
-
-    // Initial pull
-    pullServerUpdates();
-
-    // Poll every 3.5 seconds
-    const interval = setInterval(pullServerUpdates, 3500);
+    }, 3500);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [reloadFromStorage]);
+  }, [loadCrmStateFromSupabase]);
 
   // Handle document import completion (CSV, Excel, PDF, JSON)
-  const handleImportComplete = (
+  const handleImportComplete = async (
     importedLeads: Lead[],
     mode: 'append' | 'replace',
     fileName: string
   ) => {
-    const currentLeads = getStoredLeads();
     let finalLeads: Lead[] = [];
 
     if (mode === 'replace') {
       finalLeads = importedLeads;
     } else {
-      // Append mode: avoid duplicating by matching name + company or email
       const existingKeySet = new Set(
-        currentLeads.map((l) => `${l.name.toLowerCase()}_${l.company.toLowerCase()}`)
+        leads.map((l) => `${l.name.toLowerCase()}_${l.company.toLowerCase()}`)
       );
       const newUnique = importedLeads.filter(
         (l) => !existingKeySet.has(`${l.name.toLowerCase()}_${l.company.toLowerCase()}`)
       );
-      finalLeads = [...newUnique, ...currentLeads];
+      finalLeads = [...newUnique, ...leads];
     }
 
-    saveLeads(finalLeads);
     setLeads(finalLeads);
+    saveLeads(finalLeads);
+
+    // Persist to Supabase
+    try {
+      await fetch('/api/crm/leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || '',
+          'x-user-role': currentUser?.role || '',
+        },
+        body: JSON.stringify({ leads: finalLeads }),
+      });
+    } catch (err) {
+      console.warn('Failed to persist imported leads to Supabase:', err);
+    }
 
     if (currentUser) {
       logAudit(
@@ -248,7 +232,6 @@ export default function App() {
         'deal'
       );
 
-      // Create system notification for all dashboards
       addNotification({
         type: 'lead_imported',
         title: `Document Import: ${fileName}`,
@@ -266,13 +249,13 @@ export default function App() {
     }
 
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
+    loadCrmStateFromSupabase(false);
     setSyncToast(`Imported ${importedLeads.length} records from ${fileName}. Synced to Admin & Sales dashboards.`);
     setTimeout(() => setSyncToast(null), 6000);
   };
 
   // Handle manual Add Lead
-  const handleAddLead = (leadData: Partial<Lead>) => {
+  const handleAddLead = async (leadData: Partial<Lead>) => {
     if (!currentUser) return;
 
     const newLead: Lead = {
@@ -310,14 +293,15 @@ export default function App() {
       newLead.notesLog[0].leadId = newLead.id;
     }
 
-    const currentLeads = getStoredLeads();
-    const updatedLeads = [newLead, ...currentLeads];
-    saveLeads(updatedLeads);
+    const updatedLeads = [newLead, ...leads];
     setLeads(updatedLeads);
+    saveLeads(updatedLeads);
+
+    // Save directly to Supabase
+    saveLeadToServer(newLead).catch(console.warn);
 
     logAudit('CREATE_DEAL', `Created lead "${newLead.name}" (${newLead.company})`, currentUser, 'deal');
 
-    // Create notification: Both Admin and Sales Reps see new leads
     addNotification({
       type: 'lead_created',
       title: `New Lead: ${newLead.name}`,
@@ -333,20 +317,17 @@ export default function App() {
     });
 
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
     setSyncToast(`Added "${newLead.name}". Synced across both Admin & Sales.`);
     setTimeout(() => setSyncToast(null), 5000);
   };
 
   // Handle single lead/row update
-  const handleUpdateLead = (updatedLead: Lead) => {
+  const handleUpdateLead = async (updatedLead: Lead) => {
     if (!currentUser) return;
 
-    const currentLeads = getStoredLeads();
-    const oldLead = currentLeads.find((l) => l.id === updatedLead.id);
+    const oldLead = leads.find((l) => l.id === updatedLead.id);
     if (!oldLead) return;
 
-    // Strict Enforcement: Employees can only edit lead details, NOT assigned rep
     const finalLead: Lead = currentUser.role === 'admin'
       ? updatedLead
       : {
@@ -355,13 +336,16 @@ export default function App() {
           assignedName: oldLead.assignedName,
         };
 
-    const updated = currentLeads.map((l) => (l.id === finalLead.id ? finalLead : l));
-    saveLeads(updated);
+    const updated = leads.map((l) => (l.id === finalLead.id ? finalLead : l));
     setLeads(updated);
+    saveLeads(updated);
+
+    // Persist to Supabase
+    saveLeadToServer(finalLead).catch(console.warn);
 
     logAudit('UPDATE_DEAL', `Edited record for "${updatedLead.name}" (${updatedLead.company})`, currentUser, 'deal');
 
-    // Check for priority changes (Critical for Sales Rep + Admin)
+    // Check for priority changes
     if (oldLead && oldLead.priority !== updatedLead.priority) {
       addNotification({
         type: 'priority_changed',
@@ -421,7 +405,6 @@ export default function App() {
     }
 
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
   };
 
   // Handle 1-Click bulk reassignment of pipelined leads (Admin only)
@@ -443,11 +426,12 @@ export default function App() {
     const targetUser = users.find((u) => u.id === targetUserId || u.employeeId === targetUserId);
     const targetName = options?.customTargetName || targetUser?.name || 'Assigned Representative';
 
-    // 1. Update locally in persistent storage and component state
+    // 1. Update in component state & memory
     const { updatedLeads, count } = bulkReassignPipelinedLeads(targetUserId, targetName, currentUser, options);
     setLeads(updatedLeads);
+    saveLeads(updatedLeads);
 
-    // 2. Sync to backend API endpoint
+    // 2. Sync to Supabase backend API
     try {
       await fetch('/api/crm/leads/bulk-reassign', {
         method: 'POST',
@@ -466,12 +450,12 @@ export default function App() {
         }),
       });
     } catch (err) {
-      console.warn('Backend sync completed offline-first:', err);
+      console.warn('Backend sync failed:', err);
     }
 
     // 3. Broadcast sync to all active views & browser windows
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
+    loadCrmStateFromSupabase(false);
 
     // 4. Instant toast notification
     setSyncToast(`⚡ 1-Click Assignment: Successfully transferred ${count} pipelined leads to ${targetName}.`);
@@ -489,13 +473,13 @@ export default function App() {
       return;
     }
 
-    const currentLeads = getStoredLeads();
-    const target = currentLeads.find((l) => l.id === leadId);
-    const updated = currentLeads.filter((l) => l.id !== leadId);
-    saveLeads(updated);
+    const target = leads.find((l) => l.id === leadId);
+    const updated = leads.filter((l) => l.id !== leadId);
     setLeads(updated);
+    saveLeads(updated);
 
     if (target) {
+      saveLeadToServer(target, 'delete').catch(console.warn);
       logAudit('DELETE_DEAL', `Removed lead "${target.name}" (${target.company})`, currentUser, 'deal');
       addNotification({
         type: 'deal_updated',
@@ -509,7 +493,6 @@ export default function App() {
     }
 
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
     setSyncToast(`Lead "${target?.name || 'record'}" removed successfully.`);
     setTimeout(() => setSyncToast(null), 3500);
   };
@@ -525,6 +508,21 @@ export default function App() {
     if (!leadIds || leadIds.length === 0) return;
 
     const count = deleteLeads(leadIds);
+    const remaining = leads.filter((l) => !leadIds.includes(l.id));
+    setLeads(remaining);
+    saveLeads(remaining);
+
+    // Sync to server
+    fetch('/api/crm/leads', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': currentUser.id,
+        'x-user-role': currentUser.role,
+      },
+      body: JSON.stringify({ leads: remaining }),
+    }).catch(console.warn);
+
     logAudit('DELETE_DEAL', `Bulk deleted ${count} leads from CRM`, currentUser, 'deal');
     addNotification({
       type: 'deal_updated',
@@ -537,7 +535,6 @@ export default function App() {
     });
 
     syncEngine.broadcastLocalChange(currentUser);
-    reloadFromStorage();
     setSyncToast(`Successfully deleted ${count} leads.`);
     setTimeout(() => setSyncToast(null), 4000);
   };
@@ -554,7 +551,9 @@ export default function App() {
     const result = addNoteReviewToLead(leadId, type, content, rating, currentUser);
     if (!result) return;
 
-    reloadFromStorage();
+    setLeads(prev => prev.map(l => l.id === leadId ? result.updatedLead : l));
+    saveLeadToServer(result.updatedLead).catch(console.warn);
+
     syncEngine.broadcastLocalChange(currentUser);
 
     const typeLabel = type === 'review' ? 'Client Review' : type === 'remark' ? 'Remark' : 'Note';
@@ -565,7 +564,6 @@ export default function App() {
   // Handle Tasks
   const handleAddTask = (taskData: Omit<CrmTask, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!currentUser) return;
-    // Employees can create tasks for themselves, but only Admin can assign tasks to other employees
     const finalTaskData = currentUser.role === 'admin'
       ? taskData
       : {
@@ -574,8 +572,10 @@ export default function App() {
           assignedName: currentUser.name,
         };
 
-    addTask(finalTaskData, currentUser);
-    reloadFromStorage();
+    const newTask = addTask(finalTaskData, currentUser);
+    setTasks(prev => [newTask, ...prev]);
+    saveTaskToServer(newTask).catch(console.warn);
+
     syncEngine.broadcastLocalChange(currentUser);
     setSyncToast(`Assigned task "${finalTaskData.title}" to ${finalTaskData.assignedName}.`);
     setTimeout(() => setSyncToast(null), 4000);
@@ -583,13 +583,15 @@ export default function App() {
 
   const handleUpdateTask = (taskId: string, updates: Partial<CrmTask>) => {
     if (!currentUser) return;
-    // Employees cannot reassign tasks to other users
     const safeUpdates = currentUser.role === 'admin'
       ? updates
       : { ...updates, assignedTo: undefined, assignedName: undefined };
 
-    updateTask(taskId, safeUpdates, currentUser);
-    reloadFromStorage();
+    const updatedTask = updateTask(taskId, safeUpdates, currentUser);
+    if (updatedTask) {
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      saveTaskToServer(updatedTask).catch(console.warn);
+    }
     syncEngine.broadcastLocalChange(currentUser);
   };
 
@@ -600,9 +602,11 @@ export default function App() {
       setTimeout(() => setSyncToast(null), 4000);
       return;
     }
-    const currentTasks = getStoredTasks();
-    const taskToDelete = currentTasks.find((t) => t.id === taskId);
+    const taskToDelete = tasks.find((t) => t.id === taskId);
     deleteTask(taskId);
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    saveTaskToServer({ id: taskId } as any, 'delete', taskId).catch(console.warn);
+
     if (taskToDelete) {
       logAudit('DELETE_TASK', `Removed task "${taskToDelete.title}" assigned to ${taskToDelete.assignedName}`, currentUser, 'task');
       addNotification({
@@ -615,7 +619,6 @@ export default function App() {
         targetAudience: 'admin_only',
       });
     }
-    reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);
     setSyncToast('Task deleted successfully.');
     setTimeout(() => setSyncToast(null), 3500);
@@ -631,6 +634,12 @@ export default function App() {
     if (!taskIds || taskIds.length === 0) return;
 
     const count = deleteTasks(taskIds);
+    setTasks(prev => prev.filter(t => !taskIds.includes(t.id)));
+
+    taskIds.forEach(id => {
+      saveTaskToServer({ id } as any, 'delete', id).catch(console.warn);
+    });
+
     logAudit('DELETE_TASK', `Bulk deleted ${count} tasks`, currentUser, 'task');
     addNotification({
       type: 'task_updated',
@@ -641,18 +650,16 @@ export default function App() {
       actorRole: currentUser.role,
       targetAudience: 'admin_only',
     });
-    reloadFromStorage();
     syncEngine.broadcastLocalChange(currentUser);
     setSyncToast(`Successfully deleted ${count} tasks.`);
     setTimeout(() => setSyncToast(null), 4000);
   };
 
   // Handle Profile Edits (sales person or admin editing their own name, email, or password)
-  const handleSaveProfile = (updates: { name: string; email?: string; password?: string }) => {
+  const handleSaveProfile = async (updates: { name: string; email?: string; password?: string }) => {
     if (!currentUser) return;
 
     const oldName = currentUser.name;
-    const currentUsers = getStoredUsers();
 
     const updatedUser: User = {
       ...currentUser,
@@ -662,30 +669,40 @@ export default function App() {
       rawPassword: updates.password || currentUser.rawPassword,
     };
 
-    // Update in users array
-    const updatedUsers = currentUsers.map((u) => (u.id === currentUser.id ? updatedUser : u));
-    saveUsers(updatedUsers);
+    const updatedUsers = users.map((u) => (u.id === currentUser.id ? updatedUser : u));
     setUsers(updatedUsers);
+    saveUsers(updatedUsers);
 
-    // Update session
     saveSession(updatedUser);
     setCurrentUser(updatedUser);
 
-    // If name changed, update all assigned leads & tasks for consistency
+    // Persist profile to Supabase server
+    try {
+      await fetch('/api/crm/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          name: updates.name,
+          password: updates.password,
+        }),
+      });
+    } catch (err) {
+      console.warn('Could not persist profile changes to Supabase:', err);
+    }
+
     if (oldName !== updates.name) {
-      const currentLeads = getStoredLeads();
-      const updatedLeads = currentLeads.map((l) =>
+      const updatedLeads = leads.map((l) =>
         l.assignedTo === currentUser.id ? { ...l, assignedName: updates.name } : l
       );
-      saveLeads(updatedLeads);
       setLeads(updatedLeads);
+      saveLeads(updatedLeads);
 
-      const currentTasks = getStoredTasks();
-      const updatedTasks = currentTasks.map((t) =>
+      const updatedTasks = tasks.map((t) =>
         t.assignedTo === currentUser.id ? { ...t, assignedName: updates.name } : t
       );
-      saveTasks(updatedTasks);
       setTasks(updatedTasks);
+      saveTasks(updatedTasks);
 
       addNotification({
         type: 'deal_updated',
@@ -701,7 +718,6 @@ export default function App() {
     logAudit('UPDATE_USER', `User updated profile name to "${updates.name}"`, updatedUser, 'admin');
 
     syncEngine.broadcastLocalChange(updatedUser);
-    reloadFromStorage();
     setSyncToast(`Profile updated. Display name is now "${updates.name}".`);
     setTimeout(() => setSyncToast(null), 4000);
   };
@@ -739,10 +755,9 @@ export default function App() {
       console.warn('Unauthorized: Only admin can create employee accounts');
       return;
     }
-    const currentUsers = getStoredUsers();
     const newUser: User = {
       id: 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      employeeId: userData.employeeId || `EMP-${String(currentUsers.length + 1).padStart(3, '0')}`,
+      employeeId: userData.employeeId || `EMP-${String(users.length + 1).padStart(3, '0')}`,
       username: userData.username || 'user',
       name: userData.name || 'New Staff',
       role: userData.role || 'sales',
@@ -754,9 +769,12 @@ export default function App() {
       rawPassword: userData.password || 'password123',
     };
 
-    const updatedUsers = [...currentUsers, newUser];
-    saveUsers(updatedUsers);
+    const updatedUsers = [...users, newUser];
     setUsers(updatedUsers);
+    saveUsers(updatedUsers);
+
+    // Persist to Supabase
+    saveUserToServer(newUser).catch(console.warn);
 
     if (currentUser) {
       logAudit(
@@ -777,10 +795,12 @@ export default function App() {
       console.warn('Unauthorized: Only admin can update employee accounts');
       return;
     }
-    const currentUsers = getStoredUsers();
-    const updatedUsers = currentUsers.map((u) => (u.id === userId ? { ...u, ...updates } : u));
-    saveUsers(updatedUsers);
+    const updatedUsers = users.map((u) => (u.id === userId ? { ...u, ...updates } : u));
     setUsers(updatedUsers);
+    saveUsers(updatedUsers);
+
+    // Persist to Supabase
+    saveUserToServer(undefined, 'update', userId, updates).catch(console.warn);
 
     if (currentUser) {
       logAudit('UPDATE_USER', `Updated settings for user ${userId}`, currentUser, 'admin');
@@ -802,11 +822,13 @@ export default function App() {
       alert('Cannot delete the currently logged in account.');
       return;
     }
-    const currentUsers = getStoredUsers();
-    const target = currentUsers.find((u) => u.id === userId);
-    const updatedUsers = currentUsers.filter((u) => u.id !== userId);
-    saveUsers(updatedUsers);
+    const target = users.find((u) => u.id === userId);
+    const updatedUsers = users.filter((u) => u.id !== userId);
     setUsers(updatedUsers);
+    saveUsers(updatedUsers);
+
+    // Persist to Supabase
+    saveUserToServer(undefined, 'delete', userId).catch(console.warn);
 
     if (currentUser && target) {
       logAudit(
@@ -827,7 +849,8 @@ export default function App() {
       return;
     }
     resetDatabaseToDefaults();
-    reloadFromStorage();
+    resetServerDatabase().catch(console.warn);
+    loadCrmStateFromSupabase(false);
     if (currentUser) {
       logAudit('RESET_DATABASE', 'Reset database to clean default state with Amey Kulkarni', currentUser, 'admin');
     }
@@ -840,17 +863,66 @@ export default function App() {
     }
     saveSession(null);
     setCurrentUser(null);
+    setLeads([]);
+    setTasks([]);
+    setNotifications([]);
+    setAuditLogs([]);
     setCurrentTab('table');
   };
 
-  // If not authenticated, show login screen with quick test credentials
+  // 1. If database connection failed during initial load: show clear error message
+  if (dbConnectionError && !currentUser) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-neutral-950 text-white">
+        <div className="max-w-md w-full p-8 bg-neutral-900 border border-neutral-800 rounded-3xl text-center space-y-4 shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Database Connection Error</h2>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            {dbConnectionError}
+          </p>
+          <div className="pt-3">
+            <button
+              onClick={() => {
+                setIsLoadingCrmData(true);
+                setDbConnectionError(null);
+                loadCrmStateFromSupabase(true);
+              }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Retry Supabase Connection</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. If initial load is running: show clean loading state
+  if (isLoadingCrmData && !currentUser) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 bg-neutral-950 text-white space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center animate-pulse">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+        <div className="text-center">
+          <h3 className="text-sm font-semibold tracking-wide text-neutral-200">Loading CRM data...</h3>
+          <p className="text-xs text-neutral-500 mt-1">Connecting to authoritative Supabase cloud storage</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. If not authenticated, show login screen with authoritative Supabase authentication
   if (!currentUser) {
     return (
       <AuthScreen
         onLoginSuccess={(user) => {
           saveSession(user);
           setCurrentUser(user);
-          reloadFromStorage();
+          loadCrmStateFromSupabase(true);
         }}
       />
     );

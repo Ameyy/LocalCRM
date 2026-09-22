@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ShieldCheck, UserCheck, Key, Lock, Laptop, Check, AlertCircle, Shield, Briefcase } from 'lucide-react';
+import { ShieldCheck, UserCheck, Key, Lock, Laptop, Check, AlertCircle, Shield, Briefcase, Loader2 } from 'lucide-react';
 import { User } from '../types';
-import { getStoredUsers, saveSession, saveUsers, logAudit } from '../lib/storage';
-import { verifyPasswordMatch } from '../lib/authCrypto';
+import { saveSession, runLegacyCrmStorageCleanup } from '../lib/storage';
+import { loginUserApi } from '../lib/api';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: User) => void;
@@ -13,58 +13,33 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsSubmitting(true);
 
-    const users = getStoredUsers();
-    const cleanUsername = username.trim().toLowerCase();
-    const user = users.find(
-      (u) =>
-        (u.username.toLowerCase() === cleanUsername ||
-          (u.employeeId && u.employeeId.toLowerCase() === cleanUsername) ||
-          (u.email && u.email.toLowerCase() === cleanUsername))
-    );
+    // Clean any legacy stale CRM data keys from previous versions
+    runLegacyCrmStorageCleanup();
 
-    if (!user) {
-      setError(
-        loginMode === 'admin'
-          ? 'Admin account not found. Please check your Administrator ID.'
-          : 'Employee User ID not found. Contact your Administrator to generate your credentials.'
-      );
-      return;
+    try {
+      const result = await loginUserApi(username, password, loginMode);
+
+      if (!result.success || !result.user) {
+        setError(result.message || 'Unable to authenticate. Please check your credentials.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const authenticatedUser = result.user;
+      saveSession(authenticatedUser);
+      onLoginSuccess(authenticatedUser);
+    } catch (err: any) {
+      setError(err?.message || 'Unable to connect to the CRM database. Please check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    if (!user.active) {
-      setError(`Account for ${user.name} is deactivated. Please contact Administrator Amey Kulkarni.`);
-      return;
-    }
-
-    // Role-specific check if logging into admin tab
-    if (loginMode === 'admin' && user.role !== 'admin') {
-      setError('Access Denied: This User ID does not have Administrator privileges. Please use Employee Login.');
-      return;
-    }
-
-    const storedHash = user.passwordHash || user.rawPassword;
-    const isMatch = verifyPasswordMatch(password, storedHash);
-
-    if (!isMatch) {
-      setError('Incorrect password. Please verify your credentials.');
-      return;
-    }
-
-    // Success - update lastLogin
-    const updatedUser = {
-      ...user,
-      lastLogin: new Date().toISOString(),
-    };
-    const allUsers = users.map((u) => (u.id === user.id ? updatedUser : u));
-    saveUsers(allUsers);
-    saveSession(updatedUser);
-    logAudit('USER_LOGIN', `Signed in to CRM (${updatedUser.role})`, updatedUser, 'auth');
-    onLoginSuccess(updatedUser);
   };
 
   return (
@@ -197,14 +172,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           <button
             id="login-submit-btn"
             type="submit"
-            className={`w-full py-2.5 px-4 text-white text-sm font-semibold rounded-xl shadow-lg transition flex items-center justify-center gap-2 mt-2 ${
+            disabled={isSubmitting}
+            className={`w-full py-2.5 px-4 text-white text-sm font-semibold rounded-xl shadow-lg transition flex items-center justify-center gap-2 mt-2 disabled:opacity-50 cursor-pointer ${
               loginMode === 'admin'
                 ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-950/50'
                 : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
             }`}
           >
-            <span>{loginMode === 'admin' ? 'Sign In as Administrator' : 'Sign In as Employee'}</span>
-            <Check className="w-4 h-4" />
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Authenticating with Supabase...</span>
+              </>
+            ) : (
+              <>
+                <span>{loginMode === 'admin' ? 'Sign In as Administrator' : 'Sign In as Employee'}</span>
+                <Check className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
 

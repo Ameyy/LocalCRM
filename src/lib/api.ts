@@ -10,21 +10,58 @@ export interface ServerCrmData {
   auditLogs: AuditLog[];
 }
 
-export async function fetchServerData(): Promise<ServerCrmData | null> {
+export async function fetchServerData(): Promise<{ success: boolean; data?: ServerCrmData; error?: string }> {
   try {
     const res = await fetch('/api/crm/data', {
       headers: { 'Accept': 'application/json' },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      return {
+        success: false,
+        error: errJson?.message || `Server responded with HTTP ${res.status}`,
+      };
+    }
     const json = await res.json();
-    return json.data || null;
-  } catch (err) {
-    // Graceful offline fallback
-    return null;
+    return { success: true, data: json.data || null };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Unable to connect to the CRM database.',
+    };
   }
 }
 
 export const fetchCrmData = fetchServerData;
+
+export async function loginUserApi(
+  username: string,
+  password: string,
+  loginMode: 'employee' | 'admin'
+): Promise<{ success: boolean; user?: User; message?: string }> {
+  try {
+    const res = await fetch('/api/crm/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, loginMode }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.status !== 'success') {
+      return {
+        success: false,
+        message: json.message || 'Unable to sign in. Please check your credentials.',
+      };
+    }
+
+    return { success: true, user: json.user };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: 'Unable to connect to the CRM database. Please check your connection and try again.',
+    };
+  }
+}
 
 export async function syncWithServer(data: {
   leads?: Lead[];

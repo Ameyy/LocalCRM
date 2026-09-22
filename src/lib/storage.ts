@@ -421,7 +421,32 @@ const KEYS = {
   SESSION: 'localcrm_current_user_v1',
   DEVICE_ID: 'localcrm_device_id_v1',
   DEVICE_NAME: 'localcrm_device_name_v1',
+  MIGRATION_VERSION: 'krewmesh_crm_migration_version',
 };
+
+export const CURRENT_CRM_MIGRATION_VERSION = '3';
+
+/**
+ * One-time migration to remove legacy CRM business data from localStorage
+ * so that Supabase is the sole authoritative source of truth.
+ * Does NOT clear unrelated user settings or theme choices, only known CRM business state keys.
+ */
+export function runLegacyCrmStorageCleanup(): void {
+  try {
+    const currentVer = localStorage.getItem(KEYS.MIGRATION_VERSION);
+    if (!currentVer || parseInt(currentVer, 10) < parseInt(CURRENT_CRM_MIGRATION_VERSION, 10)) {
+      // Remove known legacy CRM data keys to prevent stale overrides
+      localStorage.removeItem(KEYS.USERS);
+      localStorage.removeItem(KEYS.LEADS);
+      localStorage.removeItem(KEYS.TASKS);
+      localStorage.removeItem(KEYS.NOTIFICATIONS);
+      localStorage.removeItem(KEYS.AUDIT);
+      localStorage.setItem(KEYS.MIGRATION_VERSION, CURRENT_CRM_MIGRATION_VERSION);
+    }
+  } catch (err) {
+    console.warn('Could not run legacy CRM storage cleanup:', err);
+  }
+}
 
 export function getDeviceId(): string {
   let id = localStorage.getItem(KEYS.DEVICE_ID);
