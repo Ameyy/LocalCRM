@@ -1,6 +1,0 @@
-{
-  "name": "Krew Mesh CRM",
-  "description": "Krew Mesh CRM with universal data visibility for all team members, role-governed editing, admin-only lead assignment and document importing, and real-time synchronization.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
