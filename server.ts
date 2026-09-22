@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import {
   readCrmStateFromSupabase,
   writeCrmStateToSupabase,
@@ -1105,6 +1104,7 @@ app.post('/api/crm/reset', async (req, res) => {
 async function startServer() {
   // Mount Vite in development mode or serve static files in production mode
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
       appType: 'spa',

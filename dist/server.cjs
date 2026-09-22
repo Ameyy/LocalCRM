@@ -35,7 +35,6 @@ __export(server_exports, {
 module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
-var import_vite = require("vite");
 
 // src/server/supabase.ts
 var import_supabase_js = require("@supabase/supabase-js");
@@ -46,10 +45,15 @@ function getSupabaseClient() {
   if (!supabaseClient) {
     const supabaseUrl = process.env.SUPABASE_URL || "";
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn(
-        "[Supabase Server] Warning: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing from environment variables."
-      );
+    if (!supabaseUrl) {
+      const err = new Error("Supabase configuration error: SUPABASE_URL environment variable is missing.");
+      err.code = "MISSING_SUPABASE_URL";
+      throw err;
+    }
+    if (!supabaseKey) {
+      const err = new Error("Supabase configuration error: SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY environment variables are missing.");
+      err.code = "MISSING_SUPABASE_KEY";
+      throw err;
     }
     supabaseClient = (0, import_supabase_js.createClient)(supabaseUrl, supabaseKey, {
       auth: {
@@ -1118,7 +1122,8 @@ app.post("/api/crm/reset", async (req, res) => {
 });
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
       appType: "spa"
     });

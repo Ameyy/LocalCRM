@@ -12,11 +12,18 @@ export function getSupabaseClient(): SupabaseClient {
     // while RLS remains strictly enabled on the Supabase database.
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn(
-        '[Supabase Server] Warning: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing from environment variables.'
-      );
+    if (!supabaseUrl) {
+      const err = new Error('Supabase configuration error: SUPABASE_URL environment variable is missing.');
+      (err as any).code = 'MISSING_SUPABASE_URL';
+      throw err;
     }
+
+    if (!supabaseKey) {
+      const err = new Error('Supabase configuration error: SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY environment variables are missing.');
+      (err as any).code = 'MISSING_SUPABASE_KEY';
+      throw err;
+    }
+
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: false,
